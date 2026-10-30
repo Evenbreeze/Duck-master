@@ -14,6 +14,7 @@ duck_install_opt_deploy_files "${repo}/deploy"
 
 DUCK_SRC="${repo}" bash "${SCRIPT_DIR}/preflight.sh"
 docker compose -f "$COMPOSE" build --no-cache panel
+docker run --rm --entrypoint python duck-panel:latest -c "import apscheduler; print('OK')"
 docker compose -f "$COMPOSE" up -d --force-recreate panel
 
 for _ in $(seq 1 36); do

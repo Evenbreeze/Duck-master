@@ -6,11 +6,14 @@ WORKDIR /dashboard
 COPY app/dashboard/package.json app/dashboard/package-lock.json ./
 RUN npm ci
 COPY app/dashboard/ ./
-RUN npm run build && cp build/index.html build/404.html \
+RUN VITE_BASE_API=/api/ npm run build && cp build/index.html build/404.html \
     && if [ -d build/assets ]; then \
          mkdir -p build/statics && cp -a build/assets/. build/statics/; \
          sed -i 's|/assets/|/statics/|g' build/index.html build/404.html; \
-       fi
+       fi \
+    && test -d build/statics \
+    && grep -q '/statics/' build/index.html \
+    && grep -rq '/api/' build/statics/
 
 # --- Python 依赖 + Xray ---
 FROM python:${PYTHON_VERSION}-slim AS build

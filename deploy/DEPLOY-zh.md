@@ -12,12 +12,16 @@ sudo env DOMAIN=域名 EMAIL=邮箱 ADMIN_USER=用户 ADMIN_PASSWORD='密码' ba
 
 已装过、只重建面板：`cd ~/Duck-master/deploy && sudo bash fix-panel.sh`
 
-## 白屏说明
+## 常见问题
 
-前端路径在 **`app/dashboard/__init__.py`** 启动时自动把 `/assets/` 改成 `/statics/`，**必须 Push 含该文件的代码并 rebuild 一次**。
+| 现象 | 原因 | 处理 |
+|------|------|------|
+| 白屏 / JS 404 | 静态路径 `/assets/` vs `/statics/` | Push 后 `sudo bash fix-panel.sh`，Ctrl+F5 |
+| 登录 **Not Found**，请求 `/admin` 404 | 镜像构建未写入 `VITE_BASE_API=/api/` | 同上 rebuild（Dockerfile 已固定，构建失败会直接报错） |
 
 ## 成功
 
 - `preflight OK`
-- 日志 `[entrypoint] apscheduler OK`
-- 浏览器 `https://域名:8000/dashboard/` 强刷 Ctrl+F5
+- 构建日志无 `dashboard build` 失败；容器日志 `[entrypoint] apscheduler OK`
+- 登录时 Network 应为 **`/api/admin/token`**（不是 `/admin/token`）
+- `https://域名:8000/dashboard/`

@@ -63,8 +63,16 @@ prompt_vars() {
   duck_resolve_proxy_ports "$port_interactive" || exit 1
 }
 
+duck_resolve_paths() {
+  DUCK_SRC="${DUCK_SRC:-$(duck_pick_repo_root "${SCRIPT_DIR}" 2>/dev/null || true)}"
+  DUCK_SRC="${DUCK_SRC:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
+  DEPLOY_DIR="${DUCK_SRC}/deploy"
+  [[ -f "${DEPLOY_DIR}/install.sh" ]] || DEPLOY_DIR="${SCRIPT_DIR}"
+}
+
 verify_deploy_scripts() {
-  DUCK_SRC="${DUCK_SRC:-$(cd "${SCRIPT_DIR}/.." && pwd)}" bash "${SCRIPT_DIR}/preflight.sh"
+  duck_resolve_paths
+  DUCK_SRC="$DUCK_SRC" bash "${DEPLOY_DIR}/preflight.sh"
 }
 
 confirm_or_exit() {
@@ -94,13 +102,12 @@ install_docker() {
 }
 
 sync_duck_source() {
-  DUCK_SRC="${DUCK_SRC:-$(duck_pick_repo_root "${SCRIPT_DIR}" 2>/dev/null || true)}"
-  DUCK_SRC="${DUCK_SRC:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
+  duck_resolve_paths
   [[ -f "${DUCK_SRC}/Dockerfile" ]] || { red "找不到源码，设置 DUCK_SRC"; exit 1; }
   echo "[5/6] 同步源码 -> /opt/duck/source ..."
   install -d "$MARZBAN_DIR"
   duck_rsync_repo_to_opt_source "${DUCK_SRC}"
-  duck_install_opt_deploy_files "${SCRIPT_DIR}"
+  duck_install_opt_deploy_files "${DEPLOY_DIR}"
 }
 
 build_duck_image() {
@@ -121,7 +128,7 @@ install_acme() {
 
 install_acme_hook_script() {
   install -d /opt/duck/deploy
-  cp "${SCRIPT_DIR}/acme-install-cert.sh" /opt/duck/deploy/acme-install-cert.sh
+  cp "${DEPLOY_DIR}/acme-install-cert.sh" /opt/duck/deploy/acme-install-cert.sh
   chmod +x /opt/duck/deploy/acme-install-cert.sh
 }
 
@@ -147,13 +154,14 @@ ensure_marzban_dirs() { install -d "$MARZBAN_DIR" "$DATA_DIR" "$CERT_DIR"; }
 write_config() {
   echo "[4/6] 写入配置..."
   ensure_marzban_dirs
-  sed "s|__DOMAIN__|${DOMAIN}|g" "${SCRIPT_DIR}/env.template" \
+  duck_resolve_paths
+  sed "s|__DOMAIN__|${DOMAIN}|g" "${DEPLOY_DIR}/env.template" \
     | sed "s|__PORT_VLESS__|${DUCK_PORT_VLESS}|g" \
     | sed "s|__PORT_VMESS__|${DUCK_PORT_VMESS}|g" \
     | sed "s|__PORT_TROJAN__|${DUCK_PORT_TROJAN}|g" \
     | sed "s|__PORT_SS__|${DUCK_PORT_SS}|g" \
     > "${MARZBAN_DIR}/.env"
-  sed "s|__DOMAIN__|${DOMAIN}|g" "${SCRIPT_DIR}/xray_config.template.json" \
+  sed "s|__DOMAIN__|${DOMAIN}|g" "${DEPLOY_DIR}/xray_config.template.json" \
     | sed "s|__PORT_VLESS__|${DUCK_PORT_VLESS}|g" \
     | sed "s|__PORT_VMESS__|${DUCK_PORT_VMESS}|g" \
     | sed "s|__PORT_TROJAN__|${DUCK_PORT_TROJAN}|g" \

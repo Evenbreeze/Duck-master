@@ -84,10 +84,11 @@ const getStatus = (status: string) => {
 
 const getWebsocketUrl = (nodeID: string) => {
   try {
+    const apiBase = import.meta.env.VITE_BASE_API || "/api/";
     let baseURL = new URL(
-      import.meta.env.VITE_BASE_API.startsWith("/")
-        ? window.location.origin + import.meta.env.VITE_BASE_API
-        : import.meta.env.VITE_BASE_API
+      apiBase.startsWith("/")
+        ? window.location.origin + apiBase
+        : apiBase
     );
 
     return (
