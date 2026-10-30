@@ -15,11 +15,11 @@
 #
 # Ubuntu 服务器非交互（整行复制，不要换行）：
 #   git clone https://github.com/Evenbreeze/Duck-master.git
-#   cd Duck-master/deploy && sudo env DOMAIN=... EMAIL=... ADMIN_USER=... ADMIN_PASSWORD='...' bash install.sh
+#   cd Duck-master/deploy && sudo env DOMAIN=... EMAIL=... ADMIN_USER=... ADMIN_PASSWORD='...' bash reinstall.sh
 
 set -euo pipefail
 
-DUCK_DEPLOY_SCRIPT_REV="2026-03-30-panel-check"
+DUCK_DEPLOY_SCRIPT_REV="2026-10-30-full-audit"
 
 MARZBAN_DIR="/opt/marzban"
 DATA_DIR="/var/lib/marzban"
@@ -31,6 +31,20 @@ source "${SCRIPT_DIR}/ports-lib.sh"
 red() { echo -e "\033[31m$*\033[0m" >&2; }
 green() { echo -e "\033[32m$*\033[0m"; }
 yellow() { echo -e "\033[33m$*\033[0m"; }
+
+load_repo_sync() {
+  local f
+  for f in "${SCRIPT_DIR}/lib/repo-sync.sh" /opt/duck/deploy/lib/repo-sync.sh; do
+    if [[ -f "$f" ]]; then
+      # shellcheck source=lib/repo-sync.sh
+      source "$f"
+      return 0
+    fi
+  done
+  red "缺少 deploy/lib/repo-sync.sh，请 git pull 后从仓库 deploy/ 目录运行"
+  exit 1
+}
+load_repo_sync
 
 on_err() {
   red "安装失败（第 ${BASH_LINENO[0]} 行）: ${BASH_COMMAND}"
@@ -95,36 +109,7 @@ prompt_vars() {
 }
 
 verify_deploy_scripts() {
-  local root="${SCRIPT_DIR}/.."
-  if ! grep -q 'return 0' "${SCRIPT_DIR}/ports-lib.sh" || \
-     ! grep -q 'duck_assert_unique_ports' "${SCRIPT_DIR}/ports-lib.sh"; then
-    red "deploy/ports-lib.sh 版本过旧。请在仓库目录执行: git pull"
-    exit 1
-  fi
-  if ! grep -q '2026-03-30-panel-check' "${SCRIPT_DIR}/install.sh"; then
-    red "install.sh 不是最新部署脚本。请 git pull 后重试。"
-    exit 1
-  fi
-  if ! grep -q 'entrypoint:' "${SCRIPT_DIR}/docker-compose.yml"; then
-    red "docker-compose.yml 缺少 entrypoint。请 git pull"
-    exit 1
-  fi
-  if [[ ! -f "${root}/docker-entrypoint.sh" ]]; then
-    red "缺少 docker-entrypoint.sh。请 git pull"
-    exit 1
-  fi
-  if ! grep -q 'APScheduler==3.10' "${root}/requirements.txt"; then
-    red "requirements.txt 未升级 APScheduler 3.10。请 git pull"
-    exit 1
-  fi
-  if ! grep -q 'Duck image deps OK' "${root}/Dockerfile"; then
-    red "Dockerfile 缺少构建期依赖自检。请 git pull"
-    exit 1
-  fi
-  if [[ ! -f "${SCRIPT_DIR}/reinstall.sh" ]]; then
-    red "缺少 deploy/reinstall.sh。请 git pull"
-    exit 1
-  fi
+  DUCK_SRC="${DUCK_SRC:-$(cd "${SCRIPT_DIR}/.." && pwd)}" bash "${SCRIPT_DIR}/preflight.sh"
 }
 
 confirm_or_exit() {
@@ -179,34 +164,20 @@ install_docker() {
 }
 
 sync_duck_source() {
+  DUCK_SRC="${DUCK_SRC:-$(duck_pick_repo_root "${SCRIPT_DIR}" || true)}"
   DUCK_SRC="${DUCK_SRC:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
   if [[ ! -f "${DUCK_SRC}/Dockerfile" ]]; then
-    red "未找到 Duck 源码（Dockerfile），请在本仓库根目录执行，或: export DUCK_SRC=/path/to/Marzban-master"
+    red "未找到 Duck 源码（Dockerfile），请在本仓库根目录执行，或: export DUCK_SRC=/path/to/Duck-master"
     exit 1
   fi
+  [[ -f "${SCRIPT_DIR}/lib/panel-image-test.sh" ]] || {
+    red "缺少 ${SCRIPT_DIR}/lib/panel-image-test.sh（请 Push 含 deploy/lib/ 的仓库）"
+    exit 1
+  }
   echo "[5/6] 同步 Duck 源码 -> /opt/duck/source ..."
-  install -d /opt/duck/source "$MARZBAN_DIR"
-  if command -v rsync >/dev/null 2>&1; then
-    rsync -a --delete \
-      --exclude '.git' --exclude 'node_modules' --exclude 'venv' --exclude '.venv' \
-      --exclude 'db.sqlite3' --exclude 'db.sqlite3-journal' \
-      "${DUCK_SRC}/" /opt/duck/source/
-  else
-    rm -rf /opt/duck/source
-    cp -a "${DUCK_SRC}" /opt/duck/source
-  fi
-  cp "${SCRIPT_DIR}/docker-compose.yml" "${MARZBAN_DIR}/docker-compose.yml"
-  install -d /opt/duck/deploy/lib
-  cp "${SCRIPT_DIR}/docker-compose.yml" /opt/duck/deploy/
-  cp "${SCRIPT_DIR}/fix-panel.sh" "${SCRIPT_DIR}/reinstall.sh" "${SCRIPT_DIR}/duck-ctl.sh" /opt/duck/deploy/
-  chmod +x /opt/duck/deploy/fix-panel.sh /opt/duck/deploy/reinstall.sh
-  if [[ -f "${SCRIPT_DIR}/lib/panel-image-test.sh" ]]; then
-    cp "${SCRIPT_DIR}/lib/panel-image-test.sh" /opt/duck/deploy/lib/
-  fi
-  install -m 755 /opt/duck/deploy/duck-ctl.sh /usr/local/bin/duck
-  ln -sf /opt/duck/deploy/fix-panel.sh /usr/local/bin/fix-panel.sh
-  ln -sf /opt/duck/deploy/reinstall.sh /usr/local/bin/duck-reinstall.sh
-  ln -sf /usr/local/bin/duck /usr/local/bin/marzban
+  install -d "$MARZBAN_DIR"
+  duck_rsync_repo_to_opt_source "${DUCK_SRC}"
+  duck_install_opt_deploy_files "${SCRIPT_DIR}"
 }
 
 verify_panel_image() {
@@ -215,7 +186,7 @@ verify_panel_image() {
     green "镜像依赖自检通过"
     return 0
   fi
-  red "镜像缺少 pkg_resources / apscheduler，构建应已在 Dockerfile RUN 中失败；请检查 build 日志"
+  red "镜像缺少 apscheduler；请检查 Docker build 日志与 preflight.sh"
   exit 1
 }
 
@@ -223,6 +194,10 @@ build_duck_image() {
   echo "[5/6] 构建 Duck 镜像（首次较慢，含前端编译）..."
   install_docker
   sync_duck_source
+  if grep -q 'import pkg_resources' /opt/duck/source/Dockerfile 2>/dev/null; then
+    red "/opt/duck/source/Dockerfile 仍是旧版。请 git pull 后重新运行安装。"
+    exit 1
+  fi
   docker compose -f "${MARZBAN_DIR}/docker-compose.yml" build --no-cache panel
   verify_panel_image
 }
@@ -242,7 +217,45 @@ install_acme() {
   export PATH="${HOME}/.acme.sh:${PATH}"
 }
 
+acme_hook_path() {
+  echo /opt/duck/deploy/acme-install-cert.sh
+}
+
+install_acme_hook_script() {
+  local hook src="${SCRIPT_DIR}/acme-install-cert.sh"
+  hook="$(acme_hook_path)"
+  if [[ ! -f "$src" && -n "${DUCK_SRC:-}" ]]; then
+    if [[ -f "${DUCK_SRC}/deploy/acme-install-cert.sh" ]]; then
+      src="${DUCK_SRC}/deploy/acme-install-cert.sh"
+    elif [[ -f "${DUCK_SRC}/acme-install-cert.sh" ]]; then
+      src="${DUCK_SRC}/acme-install-cert.sh"
+    fi
+  fi
+  if [[ ! -f "$src" && -f /opt/duck/deploy/acme-install-cert.sh ]]; then
+    src=/opt/duck/deploy/acme-install-cert.sh
+  fi
+  [[ -f "$src" ]] || { red "缺少 acme-install-cert.sh"; exit 1; }
+  install -d /opt/duck/deploy
+  cp "$src" "$hook"
+  chmod +x "$hook"
+}
+
+register_acme_reloadcmd() {
+  local hook domain="$1"
+  hook="$(acme_hook_path)"
+  [[ -x "${HOME}/.acme.sh/acme.sh" ]] || return 0
+  "${HOME}/.acme.sh/acme.sh" --install-cert -d "$domain" \
+    --reloadcmd "bash ${hook} ${domain}" >/dev/null 2>&1 || true
+}
+
 issue_cert() {
+  ensure_marzban_dirs
+  install_acme_hook_script
+  if [[ -s "${CERT_DIR}/${DOMAIN}.cer" && -s "${CERT_DIR}/${DOMAIN}.cer.key" ]]; then
+    green "[3/6] 证书已存在，跳过申请 (${CERT_DIR}/${DOMAIN}.cer)"
+    register_acme_reloadcmd "$DOMAIN"
+    return 0
+  fi
   echo "[3/6] 申请 SSL 证书 (${DOMAIN})..."
   if ss -tlnp 2>/dev/null | grep -q ':80 '; then
     red "80 端口被占用，无法 HTTP 验证。请停止占用 80 的服务，或改用 DNS 验证。"
@@ -251,11 +264,11 @@ issue_cert() {
   fi
   "${HOME}/.acme.sh/acme.sh" --issue -d "$DOMAIN" --standalone --httpport 80 --force
 
-  HOOK="${SCRIPT_DIR}/acme-install-cert.sh"
-  chmod +x "$HOOK"
+  local hook
+  hook="$(acme_hook_path)"
   "${HOME}/.acme.sh/acme.sh" --install-cert -d "$DOMAIN" \
-    --reloadcmd "bash ${HOOK} ${DOMAIN}"
-  bash "$HOOK" "$DOMAIN"
+    --reloadcmd "bash ${hook} ${DOMAIN}"
+  bash "$hook" "$DOMAIN"
 }
 
 ensure_marzban_dirs() {
@@ -281,9 +294,20 @@ write_config() {
 }
 
 wait_for_panel_port() {
-  local i
+  local i st
   for i in $(seq 1 40); do
-    if docker inspect -f '{{.State.Status}}' duck-panel 2>/dev/null | grep -qx running; then
+    st="$(docker inspect -f '{{.State.Status}}' duck-panel 2>/dev/null || true)"
+    if [[ "$st" == "exited" || "$st" == "dead" ]]; then
+      red "duck-panel 已退出（${st}）。最近日志："
+      docker logs duck-panel --tail 50 >&2 || true
+      exit 1
+    fi
+    if [[ "$st" == "restarting" ]] && (( i >= 3 )); then
+      red "duck-panel 反复重启（第 ${i} 次检查）。最近日志："
+      docker logs duck-panel --tail 40 >&2 || true
+      exit 1
+    fi
+    if [[ "$st" == "running" ]]; then
       if ss -tlnp 2>/dev/null | grep -q ':8000 '; then
         return 0
       fi
@@ -353,7 +377,7 @@ main() {
   后台:  https://${DOMAIN}:8000/dashboard/
   用户:  ${ADMIN_USER}
   证书:  ${CERT_DIR}/${DOMAIN}.cer
-  续期:  acme.sh 自动 cron + ${SCRIPT_DIR}/acme-install-cert.sh
+  续期:  acme.sh 自动 cron + /opt/duck/deploy/acme-install-cert.sh
 
 请确认主控云防火墙已放行 TCP: 80, 8000
 各节点放行 TCP: ${DUCK_PORT_VLESS}, ${DUCK_PORT_VMESS}, ${DUCK_PORT_TROJAN}, ${DUCK_PORT_SS}, 62050, 62051

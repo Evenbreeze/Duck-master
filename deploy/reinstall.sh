@@ -28,16 +28,28 @@ done
 
 green "=== Duck 干净重装 ==="
 
+# 先拉代码（不依赖 repo-sync.sh，避免旧服务器上 source 失败）
 if [[ -d "${REPO_ROOT}/.git" ]]; then
-  green "同步仓库到 origin/main（丢弃服务器上对仓库的手改）..."
+  green "同步仓库到 origin（丢弃服务器上对仓库的手改）..."
   git -C "${REPO_ROOT}" fetch origin
-  git -C "${REPO_ROOT}" reset --hard origin/main
+  if git -C "${REPO_ROOT}" show-ref -q refs/remotes/origin/main; then
+    git -C "${REPO_ROOT}" reset --hard origin/main
+  elif git -C "${REPO_ROOT}" show-ref -q refs/remotes/origin/master; then
+    git -C "${REPO_ROOT}" reset --hard origin/master
+  else
+    yellow "未找到 origin/main 或 origin/master，使用 FETCH_HEAD"
+    git -C "${REPO_ROOT}" reset --hard FETCH_HEAD
+  fi
 fi
 
-if ! grep -q '2026-03-30-panel-check' "${SCRIPT_DIR}/install.sh"; then
-  red "install.sh 版本过旧，请先 git pull"
+if [[ ! -f "${SCRIPT_DIR}/lib/repo-sync.sh" ]]; then
+  red "缺少 ${SCRIPT_DIR}/lib/repo-sync.sh — 请确认 GitHub 已 Push 最新 deploy/lib/"
   exit 1
 fi
+# shellcheck source=lib/repo-sync.sh
+source "${SCRIPT_DIR}/lib/repo-sync.sh"
+
+DUCK_SRC="${REPO_ROOT}" bash "${SCRIPT_DIR}/preflight.sh"
 
 green "停止旧面板..."
 docker rm -f duck-panel 2>/dev/null || true
@@ -50,10 +62,14 @@ if [[ "${DUCK_WIPE_DATA:-0}" == "1" ]]; then
   rm -rf /var/lib/marzban/*
 fi
 
-export DUCK_FRESH_INSTALL=1
-export DUCK_SRC="${REPO_ROOT}"
 cd "${SCRIPT_DIR}"
-exec env DOMAIN="$DOMAIN" EMAIL="$EMAIL" ADMIN_USER="$ADMIN_USER" ADMIN_PASSWORD="$ADMIN_PASSWORD" \
+exec env \
+  DUCK_SRC="${REPO_ROOT}" \
+  DUCK_FRESH_INSTALL=1 \
+  DOMAIN="$DOMAIN" \
+  EMAIL="$EMAIL" \
+  ADMIN_USER="$ADMIN_USER" \
+  ADMIN_PASSWORD="$ADMIN_PASSWORD" \
   ${DUCK_SKIP_DNS_CHECK:+DUCK_SKIP_DNS_CHECK=$DUCK_SKIP_DNS_CHECK} \
   ${DUCK_PORT_RANDOM:+DUCK_PORT_RANDOM=$DUCK_PORT_RANDOM} \
   bash install.sh

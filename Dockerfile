@@ -25,14 +25,15 @@ RUN python3 -m pip install --upgrade pip setuptools \
 
 # --- 运行镜像 ---
 FROM python:${PYTHON_VERSION}-slim
+ARG PYTHON_VERSION=3.12
 
 LABEL org.opencontainers.image.title="Duck Panel"
 LABEL org.opencontainers.image.description="Duck proxy panel (Marzban fork)"
 
-ENV PYTHON_LIB_PATH=/usr/local/lib/python${PYTHON_VERSION%.*}/site-packages
+ENV PYTHON_LIB_PATH=/usr/local/lib/python3.12/site-packages
 WORKDIR /code
 
-RUN rm -rf $PYTHON_LIB_PATH/*
+RUN rm -rf "${PYTHON_LIB_PATH}"/*
 
 COPY --from=build $PYTHON_LIB_PATH $PYTHON_LIB_PATH
 COPY --from=build /usr/local/bin /usr/local/bin

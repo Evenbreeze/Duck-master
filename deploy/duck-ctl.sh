@@ -11,7 +11,7 @@ case "${1:-}" in
   logs)       shift; dc logs -f "$SERVICE" "$@" ;;
   status)     dc ps ;;
   cli)        shift; dc exec -T "$SERVICE" marzban-cli "$@" ;;
-  update)     dc build "$SERVICE"; dc up -d --force-recreate "$SERVICE" ;;
+  update)     dc build --no-cache "$SERVICE"; dc up -d --force-recreate "$SERVICE" ;;
   rebuild)    dc build --no-cache "$SERVICE"; dc up -d --force-recreate "$SERVICE" ;;
   ports)      cat /var/lib/marzban/duck-ports.env 2>/dev/null || cat /var/lib/marzban/xray_config.json ;;
   "")         dc ps ;;

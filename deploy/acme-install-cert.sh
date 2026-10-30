@@ -18,12 +18,12 @@ cp "${SRC}/${DOMAIN}.cer" "${CERT_DIR}/${DOMAIN}.cer"
 cp "${SRC}/${DOMAIN}.key" "${CERT_DIR}/${DOMAIN}.cer.key"
 chmod 644 "${CERT_DIR}/${DOMAIN}.cer" "${CERT_DIR}/${DOMAIN}.cer.key"
 
-if command -v duck >/dev/null 2>&1; then
-  duck restart
-elif command -v marzban >/dev/null 2>&1; then
-  marzban restart
-elif [[ -f /opt/marzban/docker-compose.yml ]]; then
-  docker compose -f /opt/marzban/docker-compose.yml restart panel
+if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx duck-panel; then
+  if command -v duck >/dev/null 2>&1; then
+    duck restart || true
+  elif [[ -f /opt/marzban/docker-compose.yml ]]; then
+    docker compose -f /opt/marzban/docker-compose.yml restart panel || true
+  fi
 fi
 
 echo "[acme] Installed cert for ${DOMAIN} and restarted Duck panel."
