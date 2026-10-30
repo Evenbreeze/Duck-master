@@ -1,0 +1,16 @@
+# 本地开发 / 构建 Duck 镜像（生产见 deploy/docker-compose.yml）
+name: duck
+
+services:
+  panel:
+    container_name: duck-panel
+    build: .
+    image: duck-panel:latest
+    restart: unless-stopped
+    env_file: .env
+    network_mode: host
+    volumes:
+      - marzban-data:/var/lib/marzban
+
+volumes:
+  marzban-data:

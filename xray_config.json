@@ -1,0 +1,93 @@
+{
+  "log": { "loglevel": "warning" },
+  "routing": {
+    "rules": [
+      { "ip": ["geoip:private"], "outboundTag": "BLOCK", "type": "field" }
+    ]
+  },
+  "inbounds": [
+    {
+      "tag": "Shadowsocks TCP",
+      "listen": "0.0.0.0",
+      "port": 1080,
+      "protocol": "shadowsocks",
+      "settings": { "clients": [], "network": "tcp,udp" }
+    },
+    {
+      "tag": "VMess TCP",
+      "listen": "0.0.0.0",
+      "port": 8080,
+      "protocol": "vmess",
+      "settings": { "clients": [] },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "tls",
+        "tlsSettings": {
+          "certificates": [
+            {
+              "certificateFile": "/var/lib/marzban/certs/example.com.cer",
+              "keyFile": "/var/lib/marzban/certs/example.com.cer.key"
+            }
+          ],
+          "alpn": ["http/1.1", "h2"]
+        }
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": ["http", "tls", "quic"]
+      }
+    },
+    {
+      "tag": "VLESS TCP TLS",
+      "listen": "0.0.0.0",
+      "port": 443,
+      "protocol": "vless",
+      "settings": { "clients": [], "decryption": "none" },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "tls",
+        "tlsSettings": {
+          "certificates": [
+            {
+              "certificateFile": "/var/lib/marzban/certs/example.com.cer",
+              "keyFile": "/var/lib/marzban/certs/example.com.cer.key"
+            }
+          ],
+          "alpn": ["http/1.1", "h2"]
+        }
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": ["http", "tls", "quic"]
+      }
+    },
+    {
+      "tag": "Trojan TCP",
+      "listen": "0.0.0.0",
+      "port": 2053,
+      "protocol": "trojan",
+      "settings": { "clients": [], "fallbacks": [] },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "tls",
+        "tlsSettings": {
+          "certificates": [
+            {
+              "certificateFile": "/var/lib/marzban/certs/example.com.cer",
+              "keyFile": "/var/lib/marzban/certs/example.com.cer.key"
+            }
+          ],
+          "alpn": ["http/1.1", "h2"]
+        }
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": ["http", "tls", "quic"]
+      }
+    }
+  ],
+  "outbounds": [
+    { "protocol": "freedom", "tag": "DIRECT" },
+    { "protocol": "blackhole", "tag": "BLOCK" }
+  ]
+}

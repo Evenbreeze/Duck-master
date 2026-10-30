@@ -1,0 +1,15 @@
+# Duck 主控 — 自建镜像，不用 gozargah/marzban
+name: duck
+
+services:
+  panel:
+    container_name: duck-panel
+    build:
+      context: /opt/duck/source
+      dockerfile: Dockerfile
+    image: duck-panel:latest
+    restart: always
+    env_file: /opt/marzban/.env
+    network_mode: host
+    volumes:
+      - /var/lib/marzban:/var/lib/marzban
