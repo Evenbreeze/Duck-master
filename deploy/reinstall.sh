@@ -49,7 +49,10 @@ fi
 # shellcheck source=lib/repo-sync.sh
 source "${SCRIPT_DIR}/lib/repo-sync.sh"
 
-DUCK_SRC="${REPO_ROOT}" bash "${SCRIPT_DIR}/preflight.sh"
+if ! DUCK_SRC="${REPO_ROOT}" bash "${SCRIPT_DIR}/preflight.sh"; then
+  red "preflight 未通过，reinstall 已中止。请修正上方红色报错后重试。"
+  exit 1
+fi
 
 green "停止旧面板..."
 docker rm -f duck-panel 2>/dev/null || true

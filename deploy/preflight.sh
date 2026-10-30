@@ -20,7 +20,10 @@ check_grep() {
 }
 
 check_not_grep() {
-  grep -q "$2" "$1" && fail "$1 仍含旧内容: $2"
+  # set -e 下不可用 grep -q ... && fail（未匹配时 grep 退出 1 会静默终止脚本）
+  if grep -q "$2" "$1"; then
+    fail "$1 仍含旧内容: $2"
+  fi
 }
 
 # 仓库根（含 Dockerfile）与 deploy 目录
