@@ -5,7 +5,7 @@ import { create } from "zustand";
 import { FilterUsageType, useDashboard } from "./DashboardContext";
 
 const portField = z.union([
-  z.number().min(1024).max(65535),
+  z.number().min(1).max(65535),
   z.string().transform((v) => (v === "" ? undefined : parseInt(v, 10))),
   z.nan().transform(() => undefined),
 ]);

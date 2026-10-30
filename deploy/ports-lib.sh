@@ -22,7 +22,7 @@ random_proxy_port() {
 validate_proxy_port() {
   local name="$1"
   local p="$2"
-  if [[ ! "$p" =~ ^[0-9]+$ ]] || (( p < 1024 || p > 65535 )); then
+  if [[ ! "$p" =~ ^[0-9]+$ ]] || (( p < 1 || p > 65535 )); then
     echo "错误: ${name} 端口无效: ${p}" >&2
     return 1
   fi

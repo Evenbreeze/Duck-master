@@ -19,10 +19,10 @@ class NodeSettings(BaseModel):
 
 
 class DuckProxyPorts(BaseModel):
-    vless: int = Field(ge=1024, le=65535)
-    vmess: int = Field(ge=1024, le=65535)
-    trojan: int = Field(ge=1024, le=65535)
-    ss: int = Field(ge=1024, le=65535)
+    vless: int = Field(ge=1, le=65535)
+    vmess: int = Field(ge=1, le=65535)
+    trojan: int = Field(ge=1, le=65535)
+    ss: int = Field(ge=1, le=65535)
 
 
 class Node(BaseModel):
@@ -31,7 +31,7 @@ class Node(BaseModel):
     port: int = 62050
     api_port: int = 62051
     usage_coefficient: float = Field(gt=0, default=1.0)
-    proxy_port: Optional[int] = Field(None, ge=1024, le=65535)
+    proxy_port: Optional[int] = Field(None, ge=1, le=65535)
     proxy_ports: Optional[DuckProxyPorts] = None
     inbound_tags: Optional[str] = Field(None, max_length=1024)
     expire_at: Optional[int] = Field(
