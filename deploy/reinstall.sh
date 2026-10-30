@@ -29,8 +29,9 @@ done
 green "=== Duck 干净重装 ==="
 
 if [[ -d "${REPO_ROOT}/.git" ]]; then
-  green "更新仓库..."
-  git -C "${REPO_ROOT}" pull --ff-only
+  green "同步仓库到 origin/main（丢弃服务器上对仓库的手改）..."
+  git -C "${REPO_ROOT}" fetch origin
+  git -C "${REPO_ROOT}" reset --hard origin/main
 fi
 
 if ! grep -q '2026-03-30-panel-check' "${SCRIPT_DIR}/install.sh"; then

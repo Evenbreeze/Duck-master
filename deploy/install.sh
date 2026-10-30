@@ -117,6 +117,14 @@ verify_deploy_scripts() {
     red "requirements.txt 未升级 APScheduler 3.10。请 git pull"
     exit 1
   fi
+  if ! grep -q 'Duck image deps OK' "${root}/Dockerfile"; then
+    red "Dockerfile 缺少构建期依赖自检。请 git pull"
+    exit 1
+  fi
+  if [[ ! -f "${SCRIPT_DIR}/reinstall.sh" ]]; then
+    red "缺少 deploy/reinstall.sh。请 git pull"
+    exit 1
+  fi
 }
 
 confirm_or_exit() {
@@ -191,7 +199,14 @@ sync_duck_source() {
   install -d /opt/duck/deploy/lib
   cp "${SCRIPT_DIR}/docker-compose.yml" /opt/duck/deploy/
   cp "${SCRIPT_DIR}/fix-panel.sh" "${SCRIPT_DIR}/reinstall.sh" "${SCRIPT_DIR}/duck-ctl.sh" /opt/duck/deploy/
-  cp "${SCRIPT_DIR}/lib/"*.sh /opt/duck/deploy/lib/
+  chmod +x /opt/duck/deploy/fix-panel.sh /opt/duck/deploy/reinstall.sh
+  shopt -s nullglob
+  cp "${SCRIPT_DIR}/lib/"*.sh /opt/duck/deploy/lib/ 2>/dev/null || true
+  shopt -u nullglob
+  [[ -f /opt/duck/deploy/lib/panel-image-test.sh ]] || {
+    red "缺少 deploy/lib/panel-image-test.sh"
+    exit 1
+  }
   install -m 755 /opt/duck/deploy/duck-ctl.sh /usr/local/bin/duck
   ln -sf /opt/duck/deploy/fix-panel.sh /usr/local/bin/fix-panel.sh
   ln -sf /opt/duck/deploy/reinstall.sh /usr/local/bin/duck-reinstall.sh
@@ -281,7 +296,7 @@ wait_for_panel_port() {
 }
 
 restart_marzban() {
-  echo "[5/6] 启动 Duck 面板..."
+  echo "[6/6] 启动 Duck 面板..."
   docker compose -f "${MARZBAN_DIR}/docker-compose.yml" up -d --force-recreate panel
   wait_for_panel_port
   green "面板已在 8000 监听"

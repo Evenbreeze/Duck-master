@@ -11,6 +11,7 @@ SRC="${DUCK_SRC:-/opt/duck/source}"
 
 red() { echo -e "\033[31m$*\033[0m" >&2; }
 green() { echo -e "\033[32m$*\033[0m"; }
+yellow() { echo -e "\033[33m$*\033[0m"; }
 
 need_root() {
   [[ "$(id -u)" -eq 0 ]] || { red "请 root 或 sudo 运行"; exit 1; }
@@ -23,14 +24,13 @@ need_root
 
 grep -q '^setuptools' "$SRC/requirements.txt" || echo 'setuptools>=69.0.0' >> "$SRC/requirements.txt"
 
-if ! grep -q 'setuptools>=69' "$SRC/Dockerfile" 2>/dev/null; then
-  yellow_msg="建议在 ~/Duck-master 执行 git pull && rsync 到 /opt/duck/source（Dockerfile 含 setuptools 修复）"
-  echo "$yellow_msg" >&2
+if ! grep -q 'Duck image deps OK' "$SRC/Dockerfile" 2>/dev/null; then
+  yellow "源码过旧：请先在 ~/Duck-master 上 git pull，再 rsync 到 /opt/duck/source"
 fi
 
+cp -f "${DEPLOY_DIR}/docker-compose.yml" "$COMPOSE_FILE"
 green "=== 无缓存重建 duck-panel（约 5～15 分钟）==="
 docker compose -f "$COMPOSE_FILE" build --no-cache panel
-cp -f "${DEPLOY_DIR}/docker-compose.yml" "$COMPOSE_FILE"
 docker compose -f "$COMPOSE_FILE" up -d --force-recreate panel
 # 旧镜像无 entrypoint 时，启动脚本会在容器内 pip install setuptools
 
