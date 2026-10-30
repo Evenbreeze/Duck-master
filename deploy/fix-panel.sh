@@ -34,10 +34,9 @@ docker compose -f "$COMPOSE_FILE" build --no-cache panel
 docker compose -f "$COMPOSE_FILE" up -d --force-recreate panel
 # 旧镜像无 entrypoint 时，启动脚本会在容器内 pip install setuptools
 
-# shellcheck source=lib/panel-image-test.sh
-source "${DEPLOY_DIR}/lib/panel-image-test.sh"
 green "=== 检查镜像内 Python 依赖 ==="
-panel_image_test_imports duck-panel:latest
+docker run --rm --entrypoint python duck-panel:latest -c \
+  "import pkg_resources; import apscheduler; print('panel-image-test OK')"
 
 green "=== 等待面板监听 8000（最多 3 分钟）==="
 for _ in $(seq 1 36); do

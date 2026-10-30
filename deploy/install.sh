@@ -200,13 +200,9 @@ sync_duck_source() {
   cp "${SCRIPT_DIR}/docker-compose.yml" /opt/duck/deploy/
   cp "${SCRIPT_DIR}/fix-panel.sh" "${SCRIPT_DIR}/reinstall.sh" "${SCRIPT_DIR}/duck-ctl.sh" /opt/duck/deploy/
   chmod +x /opt/duck/deploy/fix-panel.sh /opt/duck/deploy/reinstall.sh
-  shopt -s nullglob
-  cp "${SCRIPT_DIR}/lib/"*.sh /opt/duck/deploy/lib/ 2>/dev/null || true
-  shopt -u nullglob
-  [[ -f /opt/duck/deploy/lib/panel-image-test.sh ]] || {
-    red "缺少 deploy/lib/panel-image-test.sh"
-    exit 1
-  }
+  if [[ -f "${SCRIPT_DIR}/lib/panel-image-test.sh" ]]; then
+    cp "${SCRIPT_DIR}/lib/panel-image-test.sh" /opt/duck/deploy/lib/
+  fi
   install -m 755 /opt/duck/deploy/duck-ctl.sh /usr/local/bin/duck
   ln -sf /opt/duck/deploy/fix-panel.sh /usr/local/bin/fix-panel.sh
   ln -sf /opt/duck/deploy/reinstall.sh /usr/local/bin/duck-reinstall.sh
@@ -214,9 +210,8 @@ sync_duck_source() {
 }
 
 verify_panel_image() {
-  # shellcheck source=lib/panel-image-test.sh
-  source "${SCRIPT_DIR}/lib/panel-image-test.sh"
-  if panel_image_test_imports duck-panel:latest; then
+  if docker run --rm --entrypoint python duck-panel:latest -c \
+    "import pkg_resources; import apscheduler; print('panel-image-test OK')"; then
     green "镜像依赖自检通过"
     return 0
   fi
