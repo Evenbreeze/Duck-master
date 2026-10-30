@@ -26,6 +26,7 @@ validate_proxy_port() {
     echo "错误: ${name} 端口无效: ${p}" >&2
     return 1
   fi
+  return 0
 }
 
 normalize_port_input() {
