@@ -48,4 +48,7 @@ RUN ln -sf /code/marzban-cli.py /usr/bin/marzban-cli \
     && chmod +x /usr/bin/marzban-cli \
     && marzban-cli completion install --shell bash 2>/dev/null || true
 
-CMD ["bash", "-c", "alembic upgrade head && python main.py"]
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

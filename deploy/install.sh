@@ -19,7 +19,7 @@
 
 set -euo pipefail
 
-DUCK_DEPLOY_SCRIPT_REV="2026-03-30"
+DUCK_DEPLOY_SCRIPT_REV="2026-03-30-panel"
 
 MARZBAN_DIR="/opt/marzban"
 DATA_DIR="/var/lib/marzban"
@@ -104,6 +104,10 @@ verify_deploy_scripts() {
     red "deploy/install.sh 版本过旧。请在仓库目录执行: git pull"
     exit 1
   fi
+  if ! grep -q '2026-03-30-panel' "${SCRIPT_DIR}/install.sh"; then
+    red "install.sh 不是 panel 修复版。请 git pull 后重试。"
+    exit 1
+  fi
 }
 
 confirm_or_exit() {
@@ -176,14 +180,29 @@ sync_duck_source() {
   fi
   cp "${SCRIPT_DIR}/docker-compose.yml" "${MARZBAN_DIR}/docker-compose.yml"
   install -m 755 "${SCRIPT_DIR}/duck-ctl.sh" /usr/local/bin/duck
+  install -m 755 "${SCRIPT_DIR}/fix-panel.sh" /usr/local/bin/fix-panel.sh
   ln -sf /usr/local/bin/duck /usr/local/bin/marzban
+}
+
+verify_panel_image() {
+  local compose="${MARZBAN_DIR}/docker-compose.yml"
+  if docker run --rm duck-panel:latest python -c "import pkg_resources" >/dev/null 2>&1; then
+    return 0
+  fi
+  if [[ -x /usr/local/bin/docker-entrypoint.sh ]] || docker run --rm --entrypoint cat duck-panel:latest /usr/local/bin/docker-entrypoint.sh >/dev/null 2>&1; then
+    yellow "镜像将靠 entrypoint 安装 setuptools；仍建议无缓存重建一次。"
+    return 0
+  fi
+  yellow "镜像缺少 pkg_resources 且无 entrypoint，无缓存重建 panel..."
+  docker compose -f "$compose" build --no-cache panel
 }
 
 build_duck_image() {
   echo "[1/6] 构建 Duck 镜像（首次较慢，含前端编译）..."
   install_docker
   sync_duck_source
-  docker compose -f "${MARZBAN_DIR}/docker-compose.yml" build
+  docker compose -f "${MARZBAN_DIR}/docker-compose.yml" build --no-cache panel
+  verify_panel_image
 }
 
 install_marzban() {
@@ -234,10 +253,26 @@ write_config() {
   duck_apply_proxy_ports "${DATA_DIR}/xray_config.json" "${DATA_DIR}/duck-ports.env"
 }
 
+wait_for_panel_port() {
+  local i
+  for i in $(seq 1 40); do
+    if docker inspect -f '{{.State.Status}}' duck-panel 2>/dev/null | grep -qx running; then
+      if ss -tlnp 2>/dev/null | grep -q ':8000 '; then
+        return 0
+      fi
+    fi
+    sleep 3
+  done
+  red "面板未在 8000 监听。日志："
+  docker logs duck-panel --tail 50 >&2 || true
+  exit 1
+}
+
 restart_marzban() {
   echo "[5/6] 启动 Duck 面板..."
-  duck up
-  sleep 8
+  docker compose -f "${MARZBAN_DIR}/docker-compose.yml" up -d panel
+  wait_for_panel_port
+  green "面板已在 8000 监听"
 }
 
 marzban_container() {

@@ -47,8 +47,18 @@ cd deploy && sudo bash install.sh
 ## 日常
 
 ```bash
-duck status | logs | restart | update | cli
+duck status | logs | restart | update | rebuild | cli
 ```
+
+**面板 Restarting、`pkg_resources`、浏览器 `ERR_CONNECTION_CLOSED`：**
+
+```bash
+cd ~/Duck-master && git pull
+rsync -a --exclude '.git' ~/Duck-master/ /opt/duck/source/
+sudo bash ~/Duck-master/deploy/fix-panel.sh
+```
+
+（会 **无缓存重建** 镜像，不是改 hosts 或反复重启能解决的。）
 
 ## 你要记住的三件事
 

@@ -12,10 +12,11 @@ case "${1:-}" in
   status)     dc ps ;;
   cli)        shift; dc exec -T "$SERVICE" marzban-cli "$@" ;;
   update)     dc build "$SERVICE"; dc up -d "$SERVICE" ;;
+  rebuild)    dc build --no-cache "$SERVICE"; dc up -d "$SERVICE" ;;
   ports)      cat /var/lib/marzban/duck-ports.env 2>/dev/null || cat /var/lib/marzban/xray_config.json ;;
   "")         dc ps ;;
   *)
-    echo "duck: up | restart | logs | status | cli | update | ports" >&2
+    echo "duck: up | restart | logs | status | cli | update | rebuild | ports" >&2
     exit 1
     ;;
 esac
