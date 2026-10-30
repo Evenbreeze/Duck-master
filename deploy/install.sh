@@ -74,7 +74,11 @@ prompt_vars() {
       exit 1
     fi
   fi
-  duck_resolve_proxy_ports 1 || exit 1
+  local port_interactive=1
+  if [[ -n "${DOMAIN:-}" && -n "${EMAIL:-}" && -n "${ADMIN_USER:-}" && -n "${ADMIN_PASSWORD:-}" ]]; then
+    port_interactive=0
+  fi
+  duck_resolve_proxy_ports "$port_interactive" || exit 1
 }
 
 validate_domain() {
