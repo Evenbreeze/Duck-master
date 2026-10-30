@@ -12,8 +12,14 @@
 #   DUCK_PORT_VLESS=443 DUCK_PORT_VMESS=8080 DUCK_PORT_TROJAN=2053 DUCK_PORT_SS=1080
 #
 # 安装前：域名 A 记录已指向本机；主控安全组放行 80、8000（代理端口在节点上开放）。
+#
+# Ubuntu 服务器非交互（整行复制，不要换行）：
+#   git clone https://github.com/Evenbreeze/Duck-master.git
+#   cd Duck-master/deploy && sudo env DOMAIN=... EMAIL=... ADMIN_USER=... ADMIN_PASSWORD='...' bash install.sh
 
 set -euo pipefail
+
+DUCK_DEPLOY_SCRIPT_REV="2026-03-30"
 
 MARZBAN_DIR="/opt/marzban"
 DATA_DIR="/var/lib/marzban"
@@ -25,6 +31,12 @@ source "${SCRIPT_DIR}/ports-lib.sh"
 red() { echo -e "\033[31m$*\033[0m" >&2; }
 green() { echo -e "\033[32m$*\033[0m"; }
 yellow() { echo -e "\033[33m$*\033[0m"; }
+
+on_err() {
+  red "安装失败（第 ${BASH_LINENO[0]} 行）: ${BASH_COMMAND}"
+  exit 1
+}
+trap on_err ERR
 
 need_root() {
   if [[ "$(id -u)" -ne 0 ]]; then
@@ -77,8 +89,35 @@ prompt_vars() {
   local port_interactive=1
   if [[ -n "${DOMAIN:-}" && -n "${EMAIL:-}" && -n "${ADMIN_USER:-}" && -n "${ADMIN_PASSWORD:-}" ]]; then
     port_interactive=0
+    export DUCK_NONINTERACTIVE=1
   fi
   duck_resolve_proxy_ports "$port_interactive" || exit 1
+}
+
+verify_deploy_scripts() {
+  if ! grep -q 'return 0' "${SCRIPT_DIR}/ports-lib.sh" || \
+     ! grep -q 'duck_assert_unique_ports' "${SCRIPT_DIR}/ports-lib.sh"; then
+    red "deploy/ports-lib.sh 版本过旧。请在仓库目录执行: git pull"
+    exit 1
+  fi
+  if ! grep -q 'local d="$1" ip=""' "${SCRIPT_DIR}/install.sh"; then
+    red "deploy/install.sh 版本过旧。请在仓库目录执行: git pull"
+    exit 1
+  fi
+}
+
+confirm_or_exit() {
+  local prompt="$1"
+  yellow "$prompt"
+  if [[ -n "${DUCK_NONINTERACTIVE:-}" ]]; then
+    red "非交互安装无法在此暂停。请修正 DNS 后重试，或交互运行: bash install.sh"
+    exit 1
+  fi
+  read -rp "仍继续? [y/N]: " ok
+  if [[ "${ok,,}" != "y" ]]; then
+    red "已取消。"
+    exit 1
+  fi
 }
 
 validate_domain() {
@@ -95,23 +134,17 @@ validate_domain() {
 
   local sip dip
   sip="$(public_ip)"
-  dip="$(domain_ip "$DOMAIN")"
+  dip="$(domain_ip "$DOMAIN" || true)"
   if [[ -n "$sip" && -n "$dip" && "$sip" != "$dip" ]]; then
-    yellow "警告: ${DOMAIN} 解析为 ${dip}，本机公网为 ${sip}，证书可能申请失败。"
-    read -rp "仍继续? [y/N]: " ok
-    if [[ "${ok,,}" != "y" ]]; then
-      red "已取消。请把域名 A 记录改指向 ${sip} 后重试。"
-      exit 1
+    if [[ "${DUCK_SKIP_DNS_CHECK:-}" == "1" ]]; then
+      yellow "警告: ${DOMAIN} -> ${dip}，本机公网 ${sip}（已 DUCK_SKIP_DNS_CHECK=1）"
+    else
+      confirm_or_exit "警告: ${DOMAIN} 解析为 ${dip}，本机公网为 ${sip}，证书可能失败。"
     fi
   elif [[ -n "$dip" ]]; then
     green "域名 ${DOMAIN} -> ${dip} OK"
   else
-    yellow "未能解析 ${DOMAIN}（本机可能未装 dig，或 DNS 未生效）。"
-    read -rp "仍继续? [y/N]: " ok
-    if [[ "${ok,,}" != "y" ]]; then
-      red "已取消。确认 DNS 生效后重试，或安装: apt install -y dnsutils"
-      exit 1
-    fi
+    confirm_or_exit "未能解析 ${DOMAIN}。请 apt install -y dnsutils 并确认 DNS 生效。"
   fi
 }
 
@@ -233,6 +266,8 @@ create_admin() {
 }
 
 main() {
+  green "=== Duck 安装开始 (${DUCK_DEPLOY_SCRIPT_REV}) ==="
+  verify_deploy_scripts
   need_root
   prompt_vars
   validate_domain

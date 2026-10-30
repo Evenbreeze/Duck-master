@@ -17,12 +17,17 @@ random_proxy_port() {
     return 0
   done
   echo "24567"
+  return 0
 }
 
 validate_proxy_port() {
   local name="$1"
   local p="$2"
-  if [[ ! "$p" =~ ^[0-9]+$ ]] || (( p < 1 || p > 65535 )); then
+  if [[ ! "$p" =~ ^[0-9]+$ ]]; then
+    echo "错误: ${name} 端口无效: ${p}" >&2
+    return 1
+  fi
+  if (( p < 1 || p > 65535 )); then
     echo "错误: ${name} 端口无效: ${p}" >&2
     return 1
   fi
@@ -38,6 +43,7 @@ normalize_port_input() {
   fi
   validate_proxy_port "$label" "$raw" || return 1
   echo "$raw"
+  return 0
 }
 
 duck_ports_used_csv() {
@@ -50,9 +56,13 @@ duck_assert_unique_ports() {
   for i in "${!p[@]}"; do
     validate_proxy_port "port" "${p[$i]}" || return 1
     for j in "${!p[@]}"; do
-      [[ "$i" -lt "$j" && "${p[$i]}" == "${p[$j]}" ]] && { echo "错误: 端口不能重复" >&2; return 1; }
+      if [[ "$i" -lt "$j" && "${p[$i]}" == "${p[$j]}" ]]; then
+        echo "错误: 端口不能重复" >&2
+        return 1
+      fi
     done
   done
+  return 0
 }
 
 duck_randomize_all_proxy_ports() {
@@ -62,6 +72,7 @@ duck_randomize_all_proxy_ports() {
   DUCK_PORT_TROJAN="$(random_proxy_port "$used")"; used+=",$DUCK_PORT_TROJAN"
   DUCK_PORT_SS="$(random_proxy_port "$used")"
   export DUCK_PORT_VLESS DUCK_PORT_VMESS DUCK_PORT_TROJAN DUCK_PORT_SS
+  return 0
 }
 
 duck_apply_default_proxy_ports() {
@@ -70,6 +81,7 @@ duck_apply_default_proxy_ports() {
   DUCK_PORT_TROJAN=$DUCK_DEFAULT_PORT_TROJAN
   DUCK_PORT_SS="$(random_proxy_port "${DUCK_DEFAULT_PORT_VLESS},${DUCK_DEFAULT_PORT_VMESS},${DUCK_DEFAULT_PORT_TROJAN}")"
   export DUCK_PORT_VLESS DUCK_PORT_VMESS DUCK_PORT_TROJAN DUCK_PORT_SS
+  return 0
 }
 
 duck_apply_proxy_ports() {
@@ -103,6 +115,11 @@ MARZBAN_NODE_PORT=62050
 MARZBAN_NODE_API_PORT=62051
 EOF
   chmod 644 "$ports_env"
+  return 0
+}
+
+duck_log_proxy_ports() {
+  echo "代理端口: VLESS=${DUCK_PORT_VLESS} VMess=${DUCK_PORT_VMESS} Trojan=${DUCK_PORT_TROJAN} SS=${DUCK_PORT_SS}"
 }
 
 duck_resolve_proxy_ports() {
@@ -111,6 +128,7 @@ duck_resolve_proxy_ports() {
   if [[ -n "${DUCK_PORT_RANDOM:-}" && "${DUCK_PORT_RANDOM}" != "0" ]]; then
     duck_randomize_all_proxy_ports
     duck_assert_unique_ports || return 1
+    duck_log_proxy_ports
     return 0
   fi
 
@@ -121,6 +139,7 @@ duck_resolve_proxy_ports() {
     : "${DUCK_PORT_SS:=$DUCK_DEFAULT_PORT_SS}"
     export DUCK_PORT_VLESS DUCK_PORT_VMESS DUCK_PORT_TROJAN DUCK_PORT_SS
     duck_assert_unique_ports || return 1
+    duck_log_proxy_ports
     return 0
   fi
 
@@ -147,9 +166,12 @@ duck_resolve_proxy_ports() {
       *) duck_apply_default_proxy_ports ;;
     esac
     duck_assert_unique_ports || return 1
+    duck_log_proxy_ports
     return 0
   fi
 
   duck_apply_default_proxy_ports
   duck_assert_unique_ports || return 1
+  duck_log_proxy_ports
+  return 0
 }
