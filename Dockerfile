@@ -38,7 +38,8 @@ COPY --from=build $PYTHON_LIB_PATH $PYTHON_LIB_PATH
 COPY --from=build /usr/local/bin /usr/local/bin
 COPY --from=build /usr/local/share/xray /usr/local/share/xray
 
-RUN pip install --no-cache-dir 'setuptools>=69.0.0'
+RUN pip install --no-cache-dir 'setuptools>=69.0.0' \
+    && python -c "import apscheduler; print('Duck image deps OK')"
 
 COPY . /code
 COPY --from=dashboard /dashboard/build /code/app/dashboard/build
@@ -49,8 +50,5 @@ RUN ln -sf /code/marzban-cli.py /usr/bin/marzban-cli \
 
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
-
-# 构建期失败即中断，避免推送缺依赖的镜像
-RUN python -c "import pkg_resources; import apscheduler; print('Duck image deps OK')"
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

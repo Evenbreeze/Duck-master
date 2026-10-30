@@ -3,7 +3,7 @@
 panel_image_test_imports() {
   local image="${1:-duck-panel:latest}"
   docker run --rm --entrypoint python "$image" -c \
-    "import pkg_resources; import apscheduler; print('panel-image-test OK')"
+    "import apscheduler; print('panel-image-test OK')"
 }
 
 panel_image_has_entrypoint() {

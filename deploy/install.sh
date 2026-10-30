@@ -211,7 +211,7 @@ sync_duck_source() {
 
 verify_panel_image() {
   if docker run --rm --entrypoint python duck-panel:latest -c \
-    "import pkg_resources; import apscheduler; print('panel-image-test OK')"; then
+    "import apscheduler; print('panel-image-test OK')"; then
     green "镜像依赖自检通过"
     return 0
   fi

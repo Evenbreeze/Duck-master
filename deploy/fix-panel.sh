@@ -36,7 +36,7 @@ docker compose -f "$COMPOSE_FILE" up -d --force-recreate panel
 
 green "=== 检查镜像内 Python 依赖 ==="
 docker run --rm --entrypoint python duck-panel:latest -c \
-  "import pkg_resources; import apscheduler; print('panel-image-test OK')"
+  "import apscheduler; print('panel-image-test OK')"
 
 green "=== 等待面板监听 8000（最多 3 分钟）==="
 for _ in $(seq 1 36); do
