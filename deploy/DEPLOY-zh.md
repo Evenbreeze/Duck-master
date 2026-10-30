@@ -2,69 +2,95 @@
 
 自建 **duck-panel** 镜像，主控只跑面板，**节点跑流量**。
 
-## Ubuntu 服务器安装（标准流程）
+**部署脚本版本标识：** 安装时应看到 `=== Duck 安装开始 (2026-03-30-panel-check) ===`
 
-**前提：** 域名 A 记录指向服务器公网 IP；安全组放行 **80、8000**。
+---
+
+## 服务器从零重装（推荐流程）
+
+### 准备
+
+1. 域名 **A 记录** → 服务器公网 IP  
+2. 云安全组放行 **TCP 80、8000**  
+3. 本机 **GitHub Desktop Push** 最新代码（含 `docker-entrypoint.sh`、`Dockerfile`、`deploy/*`）
+
+### A. 全新机器（从未装过 Duck）
 
 ```bash
-apt update && apt install -y git dnsutils
+apt update && apt install -y git dnsutils rsync
 git clone https://github.com/Evenbreeze/Duck-master.git
 cd Duck-master/deploy
-sudo env DOMAIN=你的域名 EMAIL=你的邮箱 ADMIN_USER=管理员名 ADMIN_PASSWORD='你的密码' bash install.sh
+grep '2026-03-30-panel-check' install.sh
+sudo env DOMAIN=你的域名 EMAIL=你的邮箱 ADMIN_USER=管理员 ADMIN_PASSWORD='你的密码' bash install.sh
 ```
 
-- 必须 **`sudo env`**，变量和 `bash install.sh` 写在**同一行**（不要用 `\` 换行）。
-- 成功时第一屏会出现 **`=== Duck 安装开始 (2026-03-30) ===`**，然后 **`[1/6]`**；首次构建 Docker 可能要 **20～40 分钟**。
-- 完成后：`https://你的域名:8000/dashboard/`
+### B. 同一台机重装（推荐用 reinstall.sh）
 
-**更新代码后重装 / 修复脚本：**
+**保留数据库和证书**（只重建面板镜像/容器）：
 
 ```bash
-cd ~/Duck-master && git pull
-cd deploy && sudo env DOMAIN=... EMAIL=... ADMIN_USER=... ADMIN_PASSWORD='...' bash install.sh
+cd ~/Duck-master/deploy
+sudo env DOMAIN=vless.duck678.com EMAIL=9995769@gmail.com ADMIN_USER=wanmei ADMIN_PASSWORD='wanmei123' bash reinstall.sh
 ```
 
-不要用 `curl` 单独覆盖 `install.sh` / `ports-lib.sh`，除非确认 GitHub 上已 push 最新提交。
-
-**可选环境变量：**
-
-| 变量 | 含义 |
-|------|------|
-| `DUCK_PORT_RANDOM=1` | 四个代理口全随机（一般不必，非交互默认推荐端口） |
-| `DUCK_SKIP_DNS_CHECK=1` | 域名解析与公网 IP 不一致时仍继续（证书可能失败） |
-
-## 交互安装（本机或 SSH）
+**连用户/节点数据一起清空**（慎用）：
 
 ```bash
-cd deploy && sudo bash install.sh
+sudo env DUCK_WIPE_DATA=1 DOMAIN=... EMAIL=... ADMIN_USER=... ADMIN_PASSWORD='...' bash reinstall.sh
 ```
 
-## 主控 / 节点防火墙
+### 安装过程说明（约 20～40 分钟）
 
-- **主控：** 80、8000
-- **节点：** 面板里该节点的四个代理口 + **62050、62051**（`node-init.sh`）
+| 阶段 | 脚本输出 | 含义 |
+|------|----------|------|
+| 2/6 | acme.sh | 证书工具 |
+| 3/6 | 申请 SSL | 占用 **80**，期间勿起别的 Web |
+| 4/6 | 写入 .env | 面板与 Xray 配置 |
+| 5/6 | Docker build --no-cache | 编译前端 + Python 镜像 |
+| 5/6 | 镜像依赖自检 | 缺 pkg_resources 会直接失败 |
+| 6/6 | 启动 + 等 8000 | 失败会打印 `docker logs` 并退出 |
+| 6/6 | 创建管理员 | 失败可手动 `duck cli admin create --sudo` |
 
-## 日常
+### 装完验收（必须满足）
 
 ```bash
-duck status | logs | restart | update | rebuild | cli
+grep '2026-03-30-panel-check' ~/Duck-master/deploy/install.sh
+docker logs duck-panel --tail 20    # 含 [entrypoint] pkg_resources OK
+duck status                         # Up，非 Restarting
+ss -tlnp | grep 8000
 ```
 
-**面板 Restarting、`pkg_resources`、浏览器 `ERR_CONNECTION_CLOSED`：**
+浏览器：`https://你的域名:8000/dashboard/`
+
+---
+
+## 禁止事项（避免再次踩坑）
+
+- 不要用 `curl` 单独覆盖 `install.sh` / `ports-lib.sh`  
+- 不要用 `\` 把 `sudo env DOMAIN=...` 拆成两行  
+- 不要只 `duck restart` 指望修复 **pkg_resources**（需 **rebuild / reinstall**）  
+- 服务器上改过的文件与 git 冲突时：`git fetch && git reset --hard origin/main`（会丢本地手改）
+
+---
+
+## 日常命令
 
 ```bash
-cd ~/Duck-master && git pull
-rsync -a --exclude '.git' ~/Duck-master/ /opt/duck/source/
-sudo bash ~/Duck-master/deploy/fix-panel.sh
+duck status | logs | restart | update | rebuild | cli | ports
+fix-panel.sh      # 无缓存重建 + 自检
+duck-reinstall.sh # 同 reinstall.sh 的软链
 ```
 
-（会 **无缓存重建** 镜像，不是改 hosts 或反复重启能解决的。）
+---
 
-## 你要记住的三件事
+## 防火墙
 
-1. **协议**：模板已含 VMess / VLESS / Trojan / SS（TCP+TLS）。建用户时勾选协议即可。
-2. **Host**：入站里 **地址填节点公网 IP**（不要填主控 IP）。TLS 的 SNI 用面板域名。
-3. **端口（Duck）**：添加节点时默认 **随机四个端口**。用户勾选对应入站 tag。
+- **主控：** 80、8000  
+- **节点：** 面板里四个代理口 + 62050、62051  
+
+## 节点
+
+节点机执行 `deploy/node-init.sh`（见仓库说明）。
 
 ## Telegram
 

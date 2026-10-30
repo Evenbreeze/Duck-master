@@ -19,7 +19,7 @@
 
 set -euo pipefail
 
-DUCK_DEPLOY_SCRIPT_REV="2026-03-30-panel"
+DUCK_DEPLOY_SCRIPT_REV="2026-03-30-panel-check"
 
 MARZBAN_DIR="/opt/marzban"
 DATA_DIR="/var/lib/marzban"
@@ -95,17 +95,26 @@ prompt_vars() {
 }
 
 verify_deploy_scripts() {
+  local root="${SCRIPT_DIR}/.."
   if ! grep -q 'return 0' "${SCRIPT_DIR}/ports-lib.sh" || \
      ! grep -q 'duck_assert_unique_ports' "${SCRIPT_DIR}/ports-lib.sh"; then
     red "deploy/ports-lib.sh 版本过旧。请在仓库目录执行: git pull"
     exit 1
   fi
-  if ! grep -q 'local d="$1" ip=""' "${SCRIPT_DIR}/install.sh"; then
-    red "deploy/install.sh 版本过旧。请在仓库目录执行: git pull"
+  if ! grep -q '2026-03-30-panel-check' "${SCRIPT_DIR}/install.sh"; then
+    red "install.sh 不是最新部署脚本。请 git pull 后重试。"
     exit 1
   fi
-  if ! grep -q '2026-03-30-panel' "${SCRIPT_DIR}/install.sh"; then
-    red "install.sh 不是 panel 修复版。请 git pull 后重试。"
+  if ! grep -q 'entrypoint:' "${SCRIPT_DIR}/docker-compose.yml"; then
+    red "docker-compose.yml 缺少 entrypoint。请 git pull"
+    exit 1
+  fi
+  if [[ ! -f "${root}/docker-entrypoint.sh" ]]; then
+    red "缺少 docker-entrypoint.sh。请 git pull"
+    exit 1
+  fi
+  if ! grep -q 'APScheduler==3.10' "${root}/requirements.txt"; then
+    red "requirements.txt 未升级 APScheduler 3.10。请 git pull"
     exit 1
   fi
 }
@@ -167,7 +176,7 @@ sync_duck_source() {
     red "未找到 Duck 源码（Dockerfile），请在本仓库根目录执行，或: export DUCK_SRC=/path/to/Marzban-master"
     exit 1
   fi
-  echo "[1/6] 同步 Duck 源码 -> /opt/duck/source ..."
+  echo "[5/6] 同步 Duck 源码 -> /opt/duck/source ..."
   install -d /opt/duck/source "$MARZBAN_DIR"
   if command -v rsync >/dev/null 2>&1; then
     rsync -a --delete \
@@ -179,26 +188,29 @@ sync_duck_source() {
     cp -a "${DUCK_SRC}" /opt/duck/source
   fi
   cp "${SCRIPT_DIR}/docker-compose.yml" "${MARZBAN_DIR}/docker-compose.yml"
-  install -m 755 "${SCRIPT_DIR}/duck-ctl.sh" /usr/local/bin/duck
-  install -m 755 "${SCRIPT_DIR}/fix-panel.sh" /usr/local/bin/fix-panel.sh
+  install -d /opt/duck/deploy/lib
+  cp "${SCRIPT_DIR}/docker-compose.yml" /opt/duck/deploy/
+  cp "${SCRIPT_DIR}/fix-panel.sh" "${SCRIPT_DIR}/reinstall.sh" "${SCRIPT_DIR}/duck-ctl.sh" /opt/duck/deploy/
+  cp "${SCRIPT_DIR}/lib/"*.sh /opt/duck/deploy/lib/
+  install -m 755 /opt/duck/deploy/duck-ctl.sh /usr/local/bin/duck
+  ln -sf /opt/duck/deploy/fix-panel.sh /usr/local/bin/fix-panel.sh
+  ln -sf /opt/duck/deploy/reinstall.sh /usr/local/bin/duck-reinstall.sh
   ln -sf /usr/local/bin/duck /usr/local/bin/marzban
 }
 
 verify_panel_image() {
-  local compose="${MARZBAN_DIR}/docker-compose.yml"
-  if docker run --rm duck-panel:latest python -c "import pkg_resources" >/dev/null 2>&1; then
+  # shellcheck source=lib/panel-image-test.sh
+  source "${SCRIPT_DIR}/lib/panel-image-test.sh"
+  if panel_image_test_imports duck-panel:latest; then
+    green "镜像依赖自检通过"
     return 0
   fi
-  if [[ -x /usr/local/bin/docker-entrypoint.sh ]] || docker run --rm --entrypoint cat duck-panel:latest /usr/local/bin/docker-entrypoint.sh >/dev/null 2>&1; then
-    yellow "镜像将靠 entrypoint 安装 setuptools；仍建议无缓存重建一次。"
-    return 0
-  fi
-  yellow "镜像缺少 pkg_resources 且无 entrypoint，无缓存重建 panel..."
-  docker compose -f "$compose" build --no-cache panel
+  red "镜像缺少 pkg_resources / apscheduler，构建应已在 Dockerfile RUN 中失败；请检查 build 日志"
+  exit 1
 }
 
 build_duck_image() {
-  echo "[1/6] 构建 Duck 镜像（首次较慢，含前端编译）..."
+  echo "[5/6] 构建 Duck 镜像（首次较慢，含前端编译）..."
   install_docker
   sync_duck_source
   docker compose -f "${MARZBAN_DIR}/docker-compose.yml" build --no-cache panel
@@ -270,7 +282,7 @@ wait_for_panel_port() {
 
 restart_marzban() {
   echo "[5/6] 启动 Duck 面板..."
-  docker compose -f "${MARZBAN_DIR}/docker-compose.yml" up -d panel
+  docker compose -f "${MARZBAN_DIR}/docker-compose.yml" up -d --force-recreate panel
   wait_for_panel_port
   green "面板已在 8000 监听"
 }
@@ -300,16 +312,24 @@ create_admin() {
     || yellow "创建失败时请手动: marzban cli admin create --sudo"
 }
 
+prepare_fresh_install() {
+  [[ "${DUCK_FRESH_INSTALL:-}" == "1" ]] || return 0
+  yellow "DUCK_FRESH_INSTALL=1：移除旧 duck-panel 容器..."
+  docker rm -f duck-panel 2>/dev/null || true
+  docker compose -f "${MARZBAN_DIR}/docker-compose.yml" down 2>/dev/null || true
+}
+
 main() {
   green "=== Duck 安装开始 (${DUCK_DEPLOY_SCRIPT_REV}) ==="
   verify_deploy_scripts
   need_root
+  prepare_fresh_install
   prompt_vars
   validate_domain
-  install_marzban
   install_acme
   issue_cert
   write_config
+  install_marzban
   restart_marzban
   create_admin
 

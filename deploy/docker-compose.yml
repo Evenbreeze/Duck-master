@@ -9,7 +9,14 @@ services:
       dockerfile: Dockerfile
     image: duck-panel:latest
     restart: always
+    entrypoint: ["/usr/local/bin/docker-entrypoint.sh"]
     env_file: /opt/marzban/.env
     network_mode: host
     volumes:
       - /var/lib/marzban:/var/lib/marzban
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',8000)); s.close()\""]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 120s

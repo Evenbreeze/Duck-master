@@ -2,6 +2,10 @@
 # 面板 Restarting / pkg_resources / 8000 无监听 — 一次性重建并自检
 set -euo pipefail
 
+DEPLOY_DIR="${DUCK_DEPLOY:-/opt/duck/deploy}"
+if [[ ! -f "${DEPLOY_DIR}/lib/panel-image-test.sh" ]]; then
+  DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
 COMPOSE_FILE="${COMPOSE_FILE:-/opt/marzban/docker-compose.yml}"
 SRC="${DUCK_SRC:-/opt/duck/source}"
 
@@ -26,14 +30,14 @@ fi
 
 green "=== 无缓存重建 duck-panel（约 5～15 分钟）==="
 docker compose -f "$COMPOSE_FILE" build --no-cache panel
-docker compose -f "$COMPOSE_FILE" up -d panel
+cp -f "${DEPLOY_DIR}/docker-compose.yml" "$COMPOSE_FILE"
+docker compose -f "$COMPOSE_FILE" up -d --force-recreate panel
 # 旧镜像无 entrypoint 时，启动脚本会在容器内 pip install setuptools
 
-green "=== 检查镜像内 pkg_resources ==="
-if ! docker run --rm duck-panel:latest python -c "import pkg_resources; print('pkg_resources OK')"; then
-  red "镜像仍缺 setuptools。请 git pull 同步 Dockerfile 后重新运行: bash fix-panel.sh"
-  exit 1
-fi
+# shellcheck source=lib/panel-image-test.sh
+source "${DEPLOY_DIR}/lib/panel-image-test.sh"
+green "=== 检查镜像内 Python 依赖 ==="
+panel_image_test_imports duck-panel:latest
 
 green "=== 等待面板监听 8000（最多 3 分钟）==="
 for _ in $(seq 1 36); do
