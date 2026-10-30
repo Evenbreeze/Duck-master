@@ -295,9 +295,17 @@ def process_inbounds_and_tags(
                 if host.get("use_sni_as_host", False) and sni:
                     req_host = sni
 
+                port = host["port"] or inbound["port"]
+                formatted_address = (
+                    address.format_map(format_variables) if address else ""
+                ).strip()
+                # 主控-only 时模板 Host 常无 address，会生成 @:443 / add:"" 导致 v2rayN 导入失败
+                if not formatted_address or not port:
+                    continue
+
                 host_inbound.update(
                     {
-                        "port": host["port"] or inbound["port"],
+                        "port": port,
                         "sni": sni,
                         "host": req_host,
                         "tls": inbound["tls"] if host["tls"] is None else host["tls"],
@@ -315,7 +323,7 @@ def process_inbounds_and_tags(
 
                 conf.add(
                     remark=host["remark"].format_map(format_variables),
-                    address=address.format_map(format_variables),
+                    address=formatted_address,
                     inbound=host_inbound,
                     settings=settings.model_dump()
                 )
