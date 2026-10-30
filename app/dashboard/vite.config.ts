@@ -8,6 +8,8 @@ import tsconfigPaths from "vite-tsconfig-paths";
 export default defineConfig({
   build: {
     outDir: "build",
+    // 与 app/dashboard/__init__.py 中 /statics/ 挂载一致（Marzban 约定）
+    assetsDir: "statics",
   },
   plugins: [
     tsconfigPaths(),

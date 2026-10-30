@@ -49,6 +49,14 @@ def run_build():
         StaticFiles(directory=statics_dir, html=True),
         name="statics"
     )
+    # 旧 Docker 构建（Vite 默认 assetsDir）生成 /assets/*，避免白屏 404
+    legacy_assets = build_dir / 'assets'
+    if legacy_assets.is_dir():
+        app.mount(
+            '/assets/',
+            StaticFiles(directory=legacy_assets, html=False),
+            name="dashboard-legacy-assets",
+        )
 
 
 @app.on_event("startup")

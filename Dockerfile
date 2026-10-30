@@ -6,7 +6,7 @@ WORKDIR /dashboard
 COPY app/dashboard/package.json app/dashboard/package-lock.json ./
 RUN npm ci
 COPY app/dashboard/ ./
-RUN npm run build
+RUN npm run build && cp build/index.html build/404.html
 
 # --- Python 依赖 + Xray ---
 FROM python:${PYTHON_VERSION}-slim AS build
