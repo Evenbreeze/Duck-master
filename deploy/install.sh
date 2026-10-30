@@ -233,7 +233,7 @@ build_duck_image() {
 }
 
 install_marzban() {
-  install -d "$CERT_DIR" "$DATA_DIR"
+  ensure_marzban_dirs
   build_duck_image
 }
 
@@ -263,8 +263,13 @@ issue_cert() {
   bash "$HOOK" "$DOMAIN"
 }
 
+ensure_marzban_dirs() {
+  install -d "$MARZBAN_DIR" "$DATA_DIR" "$CERT_DIR"
+}
+
 write_config() {
   echo "[4/6] 写入 .env 与 Xray 配置..."
+  ensure_marzban_dirs
   sed "s|__DOMAIN__|${DOMAIN}|g" "${SCRIPT_DIR}/env.template" \
     | sed "s|__PORT_VLESS__|${DUCK_PORT_VLESS}|g" \
     | sed "s|__PORT_VMESS__|${DUCK_PORT_VMESS}|g" \
