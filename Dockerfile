@@ -38,6 +38,9 @@ COPY --from=build $PYTHON_LIB_PATH $PYTHON_LIB_PATH
 COPY --from=build /usr/local/bin /usr/local/bin
 COPY --from=build /usr/local/share/xray /usr/local/share/xray
 
+# APScheduler 3.9 需要 pkg_resources；避免 build 缓存导致运行时缺失
+RUN pip install --no-cache-dir 'setuptools>=69.0.0'
+
 COPY . /code
 COPY --from=dashboard /dashboard/build /code/app/dashboard/build
 
