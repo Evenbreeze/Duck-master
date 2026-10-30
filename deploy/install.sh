@@ -40,9 +40,12 @@ public_ip() {
 }
 
 domain_ip() {
-  local d="$1"
-  dig +short A "$d" 2>/dev/null | grep -E '^[0-9.]+$' | tail -1 \
-    || getent ahostsv4 "$d" 2>/dev/null | awk '{print $1; exit}'
+  local d="$1" ip=""
+  ip="$(dig +short A "$d" 2>/dev/null | grep -E '^[0-9.]+$' | tail -1 || true)"
+  if [[ -z "$ip" ]]; then
+    ip="$(getent ahostsv4 "$d" 2>/dev/null | awk '{print $1; exit}' || true)"
+  fi
+  echo "$ip"
 }
 
 prompt_vars() {
@@ -92,13 +95,19 @@ validate_domain() {
   if [[ -n "$sip" && -n "$dip" && "$sip" != "$dip" ]]; then
     yellow "警告: ${DOMAIN} 解析为 ${dip}，本机公网为 ${sip}，证书可能申请失败。"
     read -rp "仍继续? [y/N]: " ok
-    [[ "${ok,,}" == "y" ]] || exit 1
+    if [[ "${ok,,}" != "y" ]]; then
+      red "已取消。请把域名 A 记录改指向 ${sip} 后重试。"
+      exit 1
+    fi
   elif [[ -n "$dip" ]]; then
     green "域名 ${DOMAIN} -> ${dip} OK"
   else
-    yellow "未能解析 ${DOMAIN}，请确认 DNS 已生效后再试。"
+    yellow "未能解析 ${DOMAIN}（本机可能未装 dig，或 DNS 未生效）。"
     read -rp "仍继续? [y/N]: " ok
-    [[ "${ok,,}" == "y" ]] || exit 1
+    if [[ "${ok,,}" != "y" ]]; then
+      red "已取消。确认 DNS 生效后重试，或安装: apt install -y dnsutils"
+      exit 1
+    fi
   fi
 }
 
