@@ -83,12 +83,9 @@ duck_install_opt_deploy_files() {
     "$d/check-repo.sh" "$d/panel-boot-smoke.py" \
     "$d/docker-compose.yml" /opt/duck/deploy/
   chmod +x /opt/duck/deploy/check-repo.sh 2>/dev/null || true
-  chmod +x /opt/duck/deploy/*.sh
-  for legacy in install fix-panel reinstall preflight acme-install-cert; do
-    ln -sf /opt/duck/deploy/duck.sh "/opt/duck/deploy/${legacy}.sh"
-  done
-  install -m 755 /opt/duck/deploy/duck.sh /usr/local/bin/duck
-  ln -sf /opt/duck/deploy/duck.sh /usr/local/bin/fix-panel.sh
+  chmod +x /opt/duck/deploy/*.sh 2>/dev/null || true
+  ln -sf /opt/duck/deploy/duck.sh /usr/local/bin/duck
+  rm -f /usr/local/bin/marzban 2>/dev/null || true
 }
 
 random_proxy_port() {

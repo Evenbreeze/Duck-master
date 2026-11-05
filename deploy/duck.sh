@@ -12,7 +12,24 @@ DUCK_DEPLOY_SCRIPT_REV="2026-11-07"
 DUCK_DIR="/opt/duck"
 DATA_DIR="/var/lib/duck"
 CERT_DIR="${DATA_DIR}/certs"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_duck_self="${BASH_SOURCE[0]}"
+while [[ -L "$_duck_self" ]]; do
+  _duck_dir="$(cd "$(dirname "$_duck_self")" && pwd)"
+  _duck_link="$(readlink "$_duck_self")"
+  _duck_self="$_duck_link"
+  [[ "$_duck_self" != /* ]] && _duck_self="${_duck_dir}/${_duck_self}"
+done
+SCRIPT_DIR="$(cd "$(dirname "$_duck_self")" && pwd)"
+if [[ ! -f "${SCRIPT_DIR}/duck-lib.sh" ]]; then
+  for _duck_canonical in /root/Duck-master/deploy/duck.sh /opt/duck/deploy/duck.sh; do
+    if [[ -f "$_duck_canonical" ]]; then
+      exec bash "$_duck_canonical" "$@"
+    fi
+  done
+  echo "找不到 deploy/duck-lib.sh（请 git clone 后 bash deploy/duck.sh install）" >&2
+  exit 1
+fi
+unset _duck_self _duck_dir _duck_link _duck_canonical
 COMPOSE_FILE="${COMPOSE_FILE:-/opt/duck/docker-compose.yml}"
 SERVICE="${DUCK_SERVICE:-panel}"
 
@@ -406,6 +423,7 @@ cmd_upgrade() {
   local repo
   repo="$(duck_ensure_github_clone "${DUCK_REPO_DIR:-}")"
   duck_pull_latest "$repo"
+  duck_install_opt_deploy_files "${repo}/deploy"
   export DUCK_SRC="$repo"
   bash "${repo}/deploy/duck.sh" fix
 }
@@ -416,7 +434,8 @@ case "${1:-}" in
   install) shift; cmd_install "$@" ;;
   reinstall) shift; cmd_reinstall "$@" ;;
   upgrade|update|pull) shift; cmd_upgrade "$@" ;;
-  fix|fix-panel) shift; cmd_fix "$@" ;;
+  fix) shift; cmd_fix "$@" ;;
+  fix-panel) yellow "fix-panel 已合并到 duck fix / duck upgrade"; shift; cmd_fix "$@" ;;
   up|start|restart|stop|down|logs|status|cli|rebuild|ports)
     cmd_compose "$@"
     ;;

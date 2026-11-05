@@ -24,13 +24,15 @@ cd /root/Duck-master && git pull && sudo duck upgrade
 
 数据 `/var/lib/duck` · 配置 `/opt/duck`
 
-## deploy
+## deploy（仅此目录，无其它 install/fix 脚本）
 
 | 文件 | 用途 |
 |------|------|
-| `duck.sh` | install / upgrade / 运维 |
-| `duck-lib.sh` | 库 |
-| `duck-node-bootstrap.sh` | 节点安装（API 下发） |
+| `duck.sh` | **唯一入口**：install / upgrade / restart / logs / cli |
+| `duck-lib.sh` | 库（勿单独执行） |
+| `duck-node-bootstrap.sh` | 节点安装（面板 API 下发） |
 | `docker-compose.yml` | 面板容器 |
-| `env.template` | `.env` 模板 |
-| `xray_config.template.json` | 主控 Xray 模板 |
+| `env.template` / `xray_config.template.json` | 配置模板 |
+| `check-repo.sh` / `panel-boot-smoke.py` | CI 与构建自检 |
+
+装好后 `duck` → 符号链接 `/opt/duck/deploy/duck.sh`（勿复制到 `/usr/local/bin`）。
