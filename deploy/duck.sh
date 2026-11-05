@@ -138,6 +138,13 @@ install_docker() {
   systemctl enable --now docker 2>/dev/null || true
 }
 
+ensure_host_deps() {
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -qq
+  apt-get install -y -qq git curl ca-certificates python3
+  install_docker
+}
+
 ensure_duck_dirs() { install -d "$DUCK_DIR" "$DATA_DIR" "$CERT_DIR"; }
 
 sync_duck_source() {
@@ -242,8 +249,9 @@ prepare_fresh_install() {
 
 cmd_install() {
   green "=== Duck 安装 (${DUCK_DEPLOY_SCRIPT_REV}) ==="
-  duck_preflight "${SCRIPT_DIR}"
   need_root
+  ensure_host_deps
+  duck_preflight "${SCRIPT_DIR}"
   prepare_fresh_install
   prompt_vars
   validate_domain
