@@ -1,10 +1,7 @@
 import { z } from "zod";
 import { fetch } from "service/http";
 
-/**
- * API contract for GET /api/system.
- * Keep in sync with app/models/system.py (SystemStats).
- */
+/** 与 app/models/system.py SystemStats 一致 */
 export const SystemStatsSchema = z.object({
   version: z.string(),
   mem_total: z.number(),

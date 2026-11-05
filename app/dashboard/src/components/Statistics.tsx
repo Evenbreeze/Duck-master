@@ -114,7 +114,21 @@ const StatisticCard: FC<PropsWithChildren<StatisticCardProps>> = ({
   );
 };
 export const Statistics: FC<BoxProps> = (props) => {
-  const { data: systemData } = useSystemQuery();
+  const { data } = useSystemQuery();
+  if (!data) {
+    return (
+      <HStack
+        justifyContent="space-between"
+        gap={0}
+        columnGap={{ lg: 4, md: 0 }}
+        rowGap={{ lg: 0, base: 4 }}
+        display="flex"
+        flexDirection={{ lg: "row", base: "column" }}
+        {...props}
+      />
+    );
+  }
+
   return (
     <HStack
       justifyContent="space-between"
@@ -128,51 +142,44 @@ export const Statistics: FC<BoxProps> = (props) => {
       <StatisticCard
         title={"活跃用户"}
         content={
-          systemData && (
-            <HStack alignItems="flex-end">
-              <Text>{numberWithCommas(systemData.users_active)}</Text>
-              <Text
-                fontWeight="normal"
-                fontSize="lg"
-                as="span"
-                display="inline-block"
-                pb="5px"
-              >
-                / {numberWithCommas(systemData.total_user)}
-              </Text>
-            </HStack>
-          )
+          <HStack alignItems="flex-end">
+            <Text>{numberWithCommas(data.users_active)}</Text>
+            <Text
+              fontWeight="normal"
+              fontSize="lg"
+              as="span"
+              display="inline-block"
+              pb="5px"
+            >
+              / {numberWithCommas(data.total_user)}
+            </Text>
+          </HStack>
         }
         icon={<TotalUsersIcon />}
       />
       <StatisticCard
         title={"总流量"}
-        content={
-          systemData &&
-          formatBytes(
-            systemData.incoming_bandwidth + systemData.outgoing_bandwidth
-          )
-        }
+        content={formatBytes(
+          data.incoming_bandwidth + data.outgoing_bandwidth
+        )}
         icon={<NetworkIcon />}
       />
       <StatisticCard
         title={"内存状态"}
         content={
-          systemData && (
-            <HStack alignItems="flex-end">
-              <Text>{formatBytes(systemData.mem_used, 1, true)[0]}</Text>
-              <Text
-                fontWeight="normal"
-                fontSize="lg"
-                as="span"
-                display="inline-block"
-                pb="5px"
-              >
-                {formatBytes(systemData.mem_used, 1, true)[1]} /{" "}
-                {formatBytes(systemData.mem_total, 1)}
-              </Text>
-            </HStack>
-          )
+          <HStack alignItems="flex-end">
+            <Text>{formatBytes(data.mem_used, 1, true)[0]}</Text>
+            <Text
+              fontWeight="normal"
+              fontSize="lg"
+              as="span"
+              display="inline-block"
+              pb="5px"
+            >
+              {formatBytes(data.mem_used, 1, true)[1]} /{" "}
+              {formatBytes(data.mem_total, 1)}
+            </Text>
+          </HStack>
         }
         icon={<MemoryIcon />}
       />
