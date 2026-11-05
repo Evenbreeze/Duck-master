@@ -34,7 +34,7 @@ import {
 import dayjs from "dayjs";
 import { FC, ReactNode, useEffect, useMemo, useState } from "react";
 import ReactDatePicker from "react-datepicker";
-import { Controller, useForm, UseFormReturn } from "react-hook-form";
+import { Controller, useForm, useFormState, UseFormReturn } from "react-hook-form";
 import {
   UseMutateFunction,
   useMutation,
@@ -99,6 +99,7 @@ const NodeAccordion: FC<{ node: NodeType }> = ({ node }) => {
     defaultValues: nodeFormDefaults(node),
     resolver: zodResolver(NodeSchema),
   });
+  const { isDirty } = useFormState({ control: form.control });
 
   const nodeSyncKey = useMemo(
     () =>
@@ -118,10 +119,10 @@ const NodeAccordion: FC<{ node: NodeType }> = ({ node }) => {
   );
 
   useEffect(() => {
-    if (!form.formState.isDirty) {
+    if (!isDirty) {
       form.reset(nodeFormDefaults(node));
     }
-  }, [nodeSyncKey, node]);
+  }, [nodeSyncKey, isDirty, node, form]);
 
   const handleDeleteNode = setDeletingNode.bind(null, node);
 
@@ -132,6 +133,7 @@ const NodeAccordion: FC<{ node: NodeType }> = ({ node }) => {
         toast
       );
       queryClient.invalidateQueries(FetchNodesQueryKey);
+      form.reset(form.getValues());
     },
     onError: (e) => {
       generateErrorMessage(e, toast, form);
@@ -476,7 +478,7 @@ export const NodesPage: FC = () => {
     <>
       <PageHeader
         title="节点"
-        description="新 VPS 用安装命令接入；已连线节点可改协议、端口与 REALITY 伪装域，保存即同步。"
+        description="安装命令接入；已连线可改协议、端口、REALITY SNI。"
       />
 
       <Box

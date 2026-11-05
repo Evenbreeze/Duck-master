@@ -36,7 +36,7 @@ export const NodesUsagePanel: FC = () => {
     fetchUsageWithFilter({
       start: dayjs().utc().subtract(30, "day").format("YYYY-MM-DDTHH:00:00"),
     });
-  }, []);
+  }, [colorMode]);
 
   return (
     <Box
