@@ -1,3 +1,4 @@
+import hashlib
 import re
 import secrets
 from datetime import datetime
@@ -10,7 +11,7 @@ from app import xray
 from app.models.admin import Admin
 from app.models.proxy import ProxySettings, ProxyTypes
 from app.subscription.share import generate_v2ray_links
-from app.utils.jwt import create_subscription_token
+from app.utils.jwt import create_subscription_token, subscription_token_issued_at
 from config import XRAY_SUBSCRIPTION_PATH, XRAY_SUBSCRIPTION_URL_PREFIX
 
 USERNAME_REGEXP = re.compile(r"^(?=\w{3,32}\b)[a-zA-Z0-9-_@.]+(?:_[a-zA-Z0-9-_@.]+)*$")
@@ -285,6 +286,7 @@ class UserResponse(User):
     used_traffic: int
     lifetime_used_traffic: int = 0
     created_at: datetime
+    sub_revoked_at: Optional[datetime] = Field(None, nullable=True)
     links: List[str] = []
     subscription_url: str = ""
     proxies: dict
@@ -304,9 +306,14 @@ class UserResponse(User):
     @model_validator(mode="after")
     def validate_subscription_url(self):
         if not self.subscription_url:
-            salt = secrets.token_hex(8)
-            url_prefix = (XRAY_SUBSCRIPTION_URL_PREFIX).replace('*', salt)
-            token = create_subscription_token(self.username)
+            url_prefix = XRAY_SUBSCRIPTION_URL_PREFIX
+            if "*" in url_prefix:
+                salt = hashlib.sha256(self.username.encode("utf-8")).hexdigest()[:16]
+                url_prefix = url_prefix.replace("*", salt)
+            issued_at = subscription_token_issued_at(
+                self.created_at, self.sub_revoked_at
+            )
+            token = create_subscription_token(self.username, issued_at=issued_at)
             self.subscription_url = f"{url_prefix}/{XRAY_SUBSCRIPTION_PATH}/{token}"
         return self
 

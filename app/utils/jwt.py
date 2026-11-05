@@ -5,7 +5,8 @@ from datetime import datetime, timedelta
 from functools import lru_cache
 from hashlib import sha256
 from math import ceil
-from typing import Union
+from datetime import timezone
+from typing import Optional, Union
 
 
 from config import JWT_ACCESS_TOKEN_EXPIRE_MINUTES
@@ -44,8 +45,20 @@ def get_admin_payload(token: str) -> Union[dict, None]:
         return
 
 
-def create_subscription_token(username: str) -> str:
-    data = username + ',' + str(ceil(time.time()))
+def subscription_token_issued_at(
+    created_at: datetime,
+    sub_revoked_at: Optional[datetime] = None,
+) -> int:
+    """Stable subscription token time: user creation, or last revoke (new link after revoke)."""
+    ref = sub_revoked_at or created_at
+    if ref.tzinfo is not None:
+        ref = ref.astimezone(timezone.utc).replace(tzinfo=None)
+    return ceil(ref.timestamp())
+
+
+def create_subscription_token(username: str, issued_at: Optional[int] = None) -> str:
+    ts = issued_at if issued_at is not None else ceil(time.time())
+    data = username + ',' + str(ts)
     data_b64_str = b64encode(data.encode('utf-8'), altchars=b'-_').decode('utf-8').rstrip('=')
     data_b64_sign = b64encode(
         sha256(
