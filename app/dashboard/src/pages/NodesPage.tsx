@@ -459,6 +459,7 @@ export const NodesPage: FC = () => {
   const toast = useToast();
   const queryClient = useQueryClient();
   const [installCommand, setInstallCommand] = useState("");
+  const [installPortsHint, setInstallPortsHint] = useState("");
   const [enrollName, setEnrollName] = useState("");
   const [enrollProtocols, setEnrollProtocols] = useState({
     vless: true,
@@ -526,10 +527,12 @@ export const NodesPage: FC = () => {
                   const protocols = PROTO_KEYS.filter((p) => enrollProtocols[p]);
                   try {
                     const res = await enrollNode(enrollName.trim(), protocols);
-                    const portsLine = res.proxy_ports
-                      ? `# 端口 ${JSON.stringify(res.proxy_ports)} · Agent ${res.service_port}/${res.api_port}\n`
-                      : "";
-                    setInstallCommand(portsLine + res.install_command);
+                    setInstallPortsHint(
+                      res.proxy_ports
+                        ? `端口 ${JSON.stringify(res.proxy_ports)} · Agent ${res.service_port}/${res.api_port}`
+                        : ""
+                    );
+                    setInstallCommand(res.install_command);
                     queryClient.invalidateQueries(FetchNodesQueryKey);
                     generateSuccessMessage("复制下面命令到新 VPS 执行", toast);
                   } catch (e) {
@@ -539,6 +542,11 @@ export const NodesPage: FC = () => {
               >
                 生成安装命令
               </Button>
+              {installPortsHint ? (
+                <Text mt={2} fontSize="xs" color="gray.500">
+                  {installPortsHint}（说明，不是命令）
+                </Text>
+              ) : null}
               {installCommand ? (
                 <Textarea
                   mt={2}
