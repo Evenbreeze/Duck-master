@@ -254,12 +254,28 @@ write_config() {
   fi
 }
 
+verify_panel_ssl_files() {
+  local cert="${CERT_DIR}/${DOMAIN}.cer" key="${CERT_DIR}/${DOMAIN}.cer.key"
+  if [[ ! -s "$cert" || ! -s "$key" ]]; then
+    red "缺少 TLS 证书: ${cert} 或 ${key}"
+    red "请确认域名 ${DOMAIN} 已解析到本机且 80 空闲，然后重跑: bash deploy/duck.sh install"
+    exit 1
+  fi
+}
+
 wait_for_panel_port() {
-  local i st
+  local i st restarts
   for i in $(seq 1 40); do
     st="$(docker inspect -f '{{.State.Status}}' duck-panel 2>/dev/null || true)"
+    restarts="$(docker inspect -f '{{.RestartCount}}' duck-panel 2>/dev/null || echo 0)"
     if [[ "$st" == "exited" || "$st" == "dead" ]]; then
-      docker logs duck-panel --tail 40
+      red "duck-panel 已退出"
+      docker logs duck-panel --tail 60
+      exit 1
+    fi
+    if [[ "$st" == "restarting" ]] || [[ "${restarts:-0}" -ge 3 ]]; then
+      red "duck-panel 反复重启 (status=${st}, restarts=${restarts})"
+      docker logs duck-panel --tail 60
       exit 1
     fi
     if [[ "$st" == "running" ]] && ss -tlnp 2>/dev/null | grep -q ':8000 '; then
@@ -267,12 +283,14 @@ wait_for_panel_port() {
     fi
     sleep 3
   done
-  docker logs duck-panel --tail 50
+  red "超时: 8000 未监听"
+  docker logs duck-panel --tail 60
   exit 1
 }
 
 start_panel() {
   echo "[6/6] 启动面板..."
+  verify_panel_ssl_files
   docker compose -f "${DUCK_DIR}/docker-compose.yml" up -d --force-recreate panel
   wait_for_panel_port
   green "面板已在 8000 监听"
