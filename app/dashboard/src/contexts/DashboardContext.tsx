@@ -1,10 +1,12 @@
-import { StatisticsQueryKey } from "components/Statistics";
 import { fetch } from "service/http";
 import { User, UserCreate } from "types/User";
 import { queryClient } from "utils/react-query";
 import { getUsersPerPageLimitSize } from "utils/userPreferenceStorage";
+import { useQuery } from "react-query";
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
+
+export const StatisticsQueryKey = "statistics-query-key";
 
 export type FilterType = {
   search?: string;
@@ -78,17 +80,55 @@ const fetchUsers = (query: FilterType): Promise<User[]> => {
     });
 };
 
-export const fetchInbounds = () => {
-  return fetch("/inbounds")
+let inboundsFetchInFlight: Promise<void> | null = null;
+
+export const fetchInbounds = (): Promise<void> => {
+  if (inboundsFetchInFlight) {
+    return inboundsFetchInFlight;
+  }
+  inboundsFetchInFlight = fetch("/inbounds")
     .then((inbounds: Inbounds) => {
       useDashboard.setState({
         inbounds: new Map(Object.entries(inbounds)) as Inbounds,
       });
     })
+    .catch(() => undefined)
     .finally(() => {
+      inboundsFetchInFlight = null;
       useDashboard.setState({ loading: false });
     });
+  return inboundsFetchInFlight;
 };
+
+export type SystemInfo = {
+  version?: string | null;
+  users_active?: number;
+  total_user?: number;
+  incoming_bandwidth?: number;
+  outgoing_bandwidth?: number;
+  mem_used?: number;
+  mem_total?: number;
+};
+
+export const fetchSystemInfo = (): Promise<SystemInfo> =>
+  fetch("/system").catch(() => ({
+    version: useDashboard.getState().version,
+  }));
+
+/** 全局面板只注册一次 /system 轮询（Footer 版本 + 首页统计共用缓存）。 */
+export function useSystemQuery() {
+  return useQuery({
+    queryKey: StatisticsQueryKey,
+    queryFn: fetchSystemInfo,
+    refetchInterval: 15000,
+    retry: false,
+    onSuccess: (data) => {
+      if (data?.version) {
+        useDashboard.setState({ version: data.version });
+      }
+    },
+  });
+}
 
 export const useDashboard = create(
   subscribeWithSelector<DashboardStateType>((set, get) => ({

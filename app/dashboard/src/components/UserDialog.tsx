@@ -42,11 +42,7 @@ import {
   resetStrategy,
   userStatusLabel,
 } from "constants/UserSettings";
-import {
-  fetchInbounds,
-  FilterUsageType,
-  useDashboard,
-} from "contexts/DashboardContext";
+import { FilterUsageType, useDashboard } from "contexts/DashboardContext";
 import dayjs from "dayjs";
 import { FC, useEffect, useState } from "react";
 import ReactApexChart from "react-apexcharts";
@@ -261,12 +257,6 @@ export const UserDialog: FC<UserDialogProps> = () => {
       ),
     []
   );
-
-  useEffect(() => {
-    if (isOpen) {
-      fetchInbounds();
-    }
-  }, [isOpen]);
 
   const [dataLimit, userStatus] = useWatch({
     control: form.control,

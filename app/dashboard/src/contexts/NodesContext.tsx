@@ -86,6 +86,18 @@ export const getNodeDefaultValues = (): NodeType => ({
 
 export const FetchNodesQueryKey = "fetch-nodes-query-key";
 
+function inboundTagsFingerprint(
+  nodes: { id?: number | null; inbound_tags?: string }[] | undefined
+): string {
+  if (!nodes?.length) return "";
+  return nodes
+    .map((n) => `${n.id ?? ""}:${n.inbound_tags ?? ""}`)
+    .sort()
+    .join("|");
+}
+
+let lastInboundTagsFingerprint = "";
+
 export type NodeStore = {
   nodes: NodeType[];
   enrollNode: (
@@ -124,9 +136,12 @@ export const useNodesQuery = () => {
     refetchInterval: onNodesPage ? 5000 : undefined,
     refetchOnWindowFocus: false,
     onSuccess: (nodes) => {
-      if (nodes?.some((n) => n.inbound_tags)) {
-        fetchInbounds();
+      const fp = inboundTagsFingerprint(nodes);
+      if (!fp || fp === lastInboundTagsFingerprint) {
+        return;
       }
+      lastInboundTagsFingerprint = fp;
+      fetchInbounds();
     },
   });
 };

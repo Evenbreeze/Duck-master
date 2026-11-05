@@ -4,10 +4,8 @@ import {
   ChartPieIcon,
   UsersIcon,
 } from "@heroicons/react/24/outline";
-import { useDashboard } from "contexts/DashboardContext";
+import { useSystemQuery } from "contexts/DashboardContext";
 import { FC, PropsWithChildren, ReactElement, ReactNode } from "react";
-import { useQuery } from "react-query";
-import { fetch } from "service/http";
 import { formatBytes, numberWithCommas } from "utils/formatByte";
 
 const TotalUsersIcon = chakra(UsersIcon, {
@@ -115,18 +113,10 @@ const StatisticCard: FC<PropsWithChildren<StatisticCardProps>> = ({
     </Card>
   );
 };
-export const StatisticsQueryKey = "statistics-query-key";
+export { StatisticsQueryKey } from "contexts/DashboardContext";
+
 export const Statistics: FC<BoxProps> = (props) => {
-  const { version } = useDashboard();
-  const { data: systemData } = useQuery({
-    queryKey: StatisticsQueryKey,
-    queryFn: () => fetch("/system"),
-    refetchInterval: 5000,
-    onSuccess: ({ version: currentVersion }) => {
-      if (version !== currentVersion)
-        useDashboard.setState({ version: currentVersion });
-    },
-  });
+  const { data: systemData } = useSystemQuery();
   return (
     <HStack
       justifyContent="space-between"

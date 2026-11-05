@@ -9,12 +9,13 @@ import { RevokeSubscriptionModal } from "components/RevokeSubscriptionModal";
 import { Sidebar } from "components/Sidebar";
 import { UserDialog } from "components/UserDialog";
 import { DeleteNodeModal } from "components/DeleteNodeModal";
-import { StatisticsQueryKey } from "components/Statistics";
-import { fetchInbounds, useDashboard } from "contexts/DashboardContext";
+import {
+  fetchInbounds,
+  useDashboard,
+  useSystemQuery,
+} from "contexts/DashboardContext";
 import { FC, useEffect } from "react";
-import { useQuery } from "react-query";
 import { Outlet } from "react-router-dom";
-import { fetch } from "service/http";
 
 export const DashboardLayout: FC = () => {
   useEffect(() => {
@@ -22,15 +23,7 @@ export const DashboardLayout: FC = () => {
     useDashboard.getState().refetchUsers();
   }, []);
 
-  useQuery({
-    queryKey: StatisticsQueryKey,
-    queryFn: () => fetch("/system"),
-    refetchInterval: 15000,
-    onSuccess: ({ version: currentVersion }) => {
-      if (currentVersion)
-        useDashboard.setState({ version: currentVersion });
-    },
-  });
+  useSystemQuery();
 
   return (
     <AppShell>
