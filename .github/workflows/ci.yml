@@ -20,6 +20,7 @@ jobs:
       - working-directory: app/dashboard
         run: npm ci && VITE_BASE_API=/api/ npm run build
       - run: bash deploy/duck.sh preflight
-      - run: |
-          docker build -t duck-panel:ci .
+      - name: Docker build + boot smoke
+        run: |
+          docker build -t duck-panel:ci --build-arg TARGETARCH=amd64 .
           docker run --rm --entrypoint python duck-panel:ci /code/deploy/panel-boot-smoke.py

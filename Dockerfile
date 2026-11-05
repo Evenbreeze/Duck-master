@@ -17,7 +17,7 @@ RUN VITE_BASE_API=/api/ npm run build && cp build/index.html build/404.html \
 
 # --- Python 依赖 + Xray ---
 FROM python:${PYTHON_VERSION}-slim AS build
-ARG TARGETARCH
+ARG TARGETARCH=amd64
 
 ENV PYTHONUNBUFFERED=1
 WORKDIR /code
@@ -62,8 +62,7 @@ COPY --from=dashboard /dashboard/build /code/app/dashboard/build
 
 RUN ln -sf /code/duck-cli.py /usr/bin/duck-cli \
     && chmod +x /code/duck-cli.py \
-    && duck-cli completion install --shell bash 2>/dev/null || true \
-    && python /code/deploy/panel-boot-smoke.py
+    && duck-cli completion install --shell bash 2>/dev/null || true
 
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
