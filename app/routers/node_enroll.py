@@ -251,7 +251,6 @@ def register_node(body: NodeRegisterRequest, db: Session = Depends(get_db)):
 
     reload_panel_xray_config()
     sync_node_hosts(db, dbnode)
-    xray.hosts.update()
 
     from app.xray import operations
 

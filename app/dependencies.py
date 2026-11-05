@@ -73,10 +73,20 @@ def get_validated_sub(
         raise HTTPException(status_code=404, detail="Not Found")
 
     dbuser = crud.get_user(db, sub['username'])
-    if not dbuser or dbuser.created_at > sub['created_at']:
+    if not dbuser:
         raise HTTPException(status_code=404, detail="Not Found")
 
-    if dbuser.sub_revoked_at and dbuser.sub_revoked_at > sub['created_at']:
+    def _utc_naive(dt: datetime) -> datetime:
+        if dt.tzinfo is not None:
+            return dt.astimezone(timezone.utc).replace(tzinfo=None)
+        return dt
+
+    token_at = _utc_naive(sub["created_at"])
+    user_created = _utc_naive(dbuser.created_at)
+    if user_created > token_at:
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    if dbuser.sub_revoked_at and _utc_naive(dbuser.sub_revoked_at) > token_at:
         raise HTTPException(status_code=404, detail="Not Found")
 
     return dbuser

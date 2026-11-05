@@ -255,13 +255,6 @@ def connect_node(node_id, config=None):
         version = node.get_version()
         _change_node_status(node_id, NodeStatus.connected, version=version)
         logger.info(f"Connected to \"{dbnode.name}\" node, xray run on v{version}")
-        from app.duck_node import sync_node_hosts
-
-        with GetDB() as db:
-            row = crud.get_node_by_id(db, node_id)
-            if row:
-                sync_node_hosts(db, row)
-        xray.hosts.update()
 
     except Exception as e:
         _change_node_status(node_id, NodeStatus.error, message=str(e))

@@ -50,6 +50,11 @@
             color: white;
         }
 
+        .on_hold {
+            background-color: #2196F3;
+            color: white;
+        }
+
         .qr-popup {
             position: fixed;
             top: 50%;
@@ -76,7 +81,7 @@
     <h1>User Information</h1>
     <p>Username: {{ user.username }}</p>
     <p>Status: <span
-            class="status {% if user.status.value == 'active' %}active{% elif user.status.value == 'limited' %}limited{% elif user.status.value == 'expired' %}expired{% elif user.status.value == 'disabled' %}disabled{% endif %}">{{
+            class="status {% if user.status.value == 'active' %}active{% elif user.status.value == 'limited' %}limited{% elif user.status.value == 'expired' %}expired{% elif user.status.value == 'disabled' %}disabled{% elif user.status.value == 'on_hold' %}on_hold{% endif %}">{{
             user.status.value }}</span></p>
     <p>Data Limit: {% if not user.data_limit %}∞{% else %}{{ user.data_limit | bytesformat }}{% endif %}</p>
     <p>Data Used: {{ user.used_traffic | bytesformat }}{% if user.data_limit_reset_strategy != 'no_reset' %} (resets
@@ -91,8 +96,9 @@
         remaining)
         {% endif %}</p>
 
-    {% if user.status == 'active' %}
+    {% if user.status.value in ['active', 'on_hold'] %}
     <h2>Links:</h2>
+    {% if user.links %}
     <ul>
         {% for link in user.links %}
         <li>
@@ -102,6 +108,9 @@
         </li>
         {% endfor %}
     </ul>
+    {% else %}
+    <p>No proxy links were generated. In the panel: user must have matching protocols (e.g. vless, shadowsocks) and node Hosts must have the node IP filled.</p>
+    {% endif %}
     <div class="qr-popup" id="qrPopup">
         <div class="qr-close-button">
             <button onclick="closeQrPopup()">X</button>

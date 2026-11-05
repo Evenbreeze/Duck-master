@@ -136,6 +136,44 @@ def remove_hosts_by_remark_prefix(db: Session, prefix: str) -> int:
     return len(hosts)
 
 
+_DUCK_PROTO_TO_PROXY = {
+    "vless": ProxyTypes.VLESS,
+    "vmess": ProxyTypes.VMess,
+    "trojan": ProxyTypes.Trojan,
+    "ss": ProxyTypes.Shadowsocks,
+}
+
+
+def ensure_users_allow_inbound_tags(db: Session, inbound_tags: List[str]) -> None:
+    """
+    节点入站写入配置后，从所有用户的 excluded_inbounds 中移除这些 tag。
+    避免创建用户时面板 inbounds 未含节点 tag，导致订阅永远为空。
+    """
+    from app.duck_node import protocol_from_tag
+
+    changed = False
+    for tag in inbound_tags:
+        proto_key = protocol_from_tag(tag)
+        if not proto_key:
+            continue
+        proxy_type = _DUCK_PROTO_TO_PROXY.get(proto_key)
+        if not proxy_type:
+            continue
+        inbound_row = get_or_create_inbound(db, tag)
+        proxies = (
+            db.query(Proxy)
+            .filter(Proxy.type == proxy_type)
+            .options(joinedload(Proxy.excluded_inbounds))
+            .all()
+        )
+        for proxy in proxies:
+            if inbound_row in proxy.excluded_inbounds:
+                proxy.excluded_inbounds.remove(inbound_row)
+                changed = True
+    if changed:
+        db.commit()
+
+
 def upsert_duck_node_host(
     db: Session,
     inbound_tag: str,

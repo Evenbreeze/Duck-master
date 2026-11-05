@@ -3,7 +3,7 @@ import { useLocation } from "react-router-dom";
 import { fetch } from "service/http";
 import { z } from "zod";
 import { create } from "zustand";
-import { FilterUsageType } from "./DashboardContext";
+import { fetchInbounds, FilterUsageType } from "./DashboardContext";
 
 const portField = z.union([
   z.number().min(1).max(65535),
@@ -123,6 +123,11 @@ export const useNodesQuery = () => {
     queryFn: useNodes.getState().fetchNodes,
     refetchInterval: onNodesPage ? 5000 : undefined,
     refetchOnWindowFocus: false,
+    onSuccess: (nodes) => {
+      if (nodes?.some((n) => n.inbound_tags)) {
+        fetchInbounds();
+      }
+    },
   });
 };
 

@@ -298,8 +298,18 @@ class UserResponse(User):
     @model_validator(mode="after")
     def validate_links(self):
         if not self.links:
+            inbounds = self.inbounds
+            if not inbounds and self.proxies:
+                inbounds = {}
+                for proxy_type in self.proxies:
+                    excluded = set(self.excluded_inbounds.get(proxy_type) or [])
+                    inbounds[proxy_type] = [
+                        i["tag"]
+                        for i in xray.config.inbounds_by_protocol.get(proxy_type, [])
+                        if i["tag"] not in excluded
+                    ]
             self.links = generate_v2ray_links(
-                self.proxies, self.inbounds, extra_data=self.model_dump(), reverse=False,
+                self.proxies, inbounds, extra_data=self.model_dump(), reverse=False,
             )
         return self
 

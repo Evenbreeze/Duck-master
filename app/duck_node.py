@@ -586,6 +586,7 @@ def sync_node_hosts(db, dbnode: "DBNode") -> None:
             port=port,
             sni=sni,
         )
+    crud.ensure_users_allow_inbound_tags(db, tags)
     xray.hosts.update()
 
 

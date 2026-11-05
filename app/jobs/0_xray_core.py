@@ -62,9 +62,15 @@ def start_core():
     for node_id in node_ids:
         xray.operations.connect_node(node_id, config)
 
+    from app.duck_node import inbound_tags_list, sync_node_hosts
+
     with GetDB() as db:
         for tag in xray.config.inbounds_by_tag:
             crud.get_or_create_inbound(db, tag)
+        for dbnode in crud.get_nodes(db=db, enabled=True):
+            tags = inbound_tags_list(dbnode)
+            if tags:
+                sync_node_hosts(db, dbnode)
     xray.hosts.update()
 
     scheduler.add_job(core_health_check, 'interval',
