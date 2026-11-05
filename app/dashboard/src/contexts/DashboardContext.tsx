@@ -1,4 +1,5 @@
 import { fetch } from "service/http";
+import { fetchSystemStats } from "types/SystemStats";
 import { User, UserCreate } from "types/User";
 import { queryClient } from "utils/react-query";
 import { getUsersPerPageLimitSize } from "utils/userPreferenceStorage";
@@ -100,40 +101,11 @@ export const fetchInbounds = (): Promise<void> => {
   return inboundsFetchInFlight;
 };
 
-export type SystemInfo = {
-  version: string | null;
-  users_active: number;
-  total_user: number;
-  incoming_bandwidth: number;
-  outgoing_bandwidth: number;
-  mem_used: number;
-  mem_total: number;
-};
-
-function normalizeSystemInfo(raw: Partial<SystemInfo>): SystemInfo {
-  return {
-    version: raw.version ?? null,
-    users_active: raw.users_active ?? 0,
-    total_user: raw.total_user ?? 0,
-    incoming_bandwidth: raw.incoming_bandwidth ?? 0,
-    outgoing_bandwidth: raw.outgoing_bandwidth ?? 0,
-    mem_used: raw.mem_used ?? 0,
-    mem_total: raw.mem_total ?? 0,
-  };
-}
-
-export const fetchSystemInfo = (): Promise<SystemInfo> =>
-  fetch("/system")
-    .then((data: Partial<SystemInfo>) => normalizeSystemInfo(data))
-    .catch(() =>
-      normalizeSystemInfo({ version: useDashboard.getState().version ?? null })
-    );
-
 /** 全局面板只注册一次 /system 轮询（Footer 版本 + 首页统计共用缓存）。 */
 export function useSystemQuery() {
   return useQuery({
     queryKey: StatisticsQueryKey,
-    queryFn: fetchSystemInfo,
+    queryFn: fetchSystemStats,
     refetchInterval: 15000,
     retry: false,
     onSuccess: (data) => {

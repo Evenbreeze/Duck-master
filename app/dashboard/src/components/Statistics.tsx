@@ -113,8 +113,6 @@ const StatisticCard: FC<PropsWithChildren<StatisticCardProps>> = ({
     </Card>
   );
 };
-export { StatisticsQueryKey } from "contexts/DashboardContext";
-
 export const Statistics: FC<BoxProps> = (props) => {
   const { data: systemData } = useSystemQuery();
   return (

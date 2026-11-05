@@ -2,6 +2,7 @@ from pydantic import BaseModel
 
 
 class SystemStats(BaseModel):
+    """GET /api/system — 前端 Zod: app/dashboard/src/types/SystemStats.ts"""
     version: str
     mem_total: int
     mem_used: int

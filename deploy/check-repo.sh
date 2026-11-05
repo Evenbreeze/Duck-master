@@ -66,4 +66,14 @@ if ! grep -q 'bash -c' "$ROOT/app/routers/node_enroll.py"; then
   exit 1
 fi
 
+system_ts="$ROOT/app/dashboard/src/types/SystemStats.ts"
+for field in version mem_total mem_used cpu_cores cpu_usage total_user online_users \
+  users_active users_on_hold users_disabled users_expired users_limited \
+  incoming_bandwidth outgoing_bandwidth incoming_bandwidth_speed outgoing_bandwidth_speed; do
+  if ! grep -q "$field" "$system_ts"; then
+    echo "SystemStats.ts 缺少字段 $field（须与 app/models/system.py 一致）" >&2
+    exit 1
+  fi
+done
+
 echo "check-repo OK"
