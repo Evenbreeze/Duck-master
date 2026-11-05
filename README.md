@@ -12,7 +12,11 @@ sudo env DOMAIN='你的域名' EMAIL='你的邮箱' ADMIN_USER='admin' ADMIN_PAS
   DUCK_SKIP_DNS_CHECK=1 bash /root/Duck-master/deploy/duck.sh install
 ```
 
-日常更新：`sudo duck upgrade`（或 `sudo bash /root/Duck-master/deploy/duck.sh upgrade`）
+日常更新 / 修面板：`sudo duck upgrade`（拉 GitHub 最新 + 检查 + 重建；代码 push 后 VPS 只跑这一条）
+
+```bash
+cd /root/Duck-master && git pull && sudo duck upgrade
+```
 
 远程一键：`curl -fsSL https://raw.githubusercontent.com/Evenbreeze/Duck-master/main/deploy/duck.sh | sudo bash -s upgrade`
 

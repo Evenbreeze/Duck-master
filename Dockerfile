@@ -62,7 +62,8 @@ COPY --from=dashboard /dashboard/build /code/app/dashboard/build
 
 RUN ln -sf /code/duck-cli.py /usr/bin/duck-cli \
     && chmod +x /code/duck-cli.py \
-    && duck-cli completion install --shell bash 2>/dev/null || true
+    && duck-cli completion install --shell bash 2>/dev/null || true \
+    && python /code/deploy/panel-boot-smoke.py
 
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh

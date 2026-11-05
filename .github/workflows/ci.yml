@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - run: bash deploy/check-repo.sh
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -21,4 +22,4 @@ jobs:
       - run: bash deploy/duck.sh preflight
       - run: |
           docker build -t duck-panel:ci .
-          docker run --rm duck-panel:ci python -c "import apscheduler"
+          docker run --rm --entrypoint python duck-panel:ci /code/deploy/panel-boot-smoke.py

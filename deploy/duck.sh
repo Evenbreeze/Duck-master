@@ -198,7 +198,7 @@ build_duck_image() {
     red "Dockerfile 过旧，请 Push 后 git pull"; exit 1
   fi
   docker compose -f "${DUCK_DIR}/docker-compose.yml" build --no-cache panel
-  docker run --rm --entrypoint python duck-panel:latest -c "import apscheduler; print('OK')"
+  duck_panel_image_smoke duck-panel:latest
 }
 
 install_acme() {
@@ -386,7 +386,7 @@ cmd_fix() {
   duck_install_opt_deploy_files "${repo}/deploy"
   DUCK_SRC="${repo}" duck_preflight "${repo}/deploy"
   docker compose -f "$COMPOSE_FILE" build --no-cache panel
-  docker run --rm --entrypoint python duck-panel:latest -c "import apscheduler; print('OK')"
+  duck_panel_image_smoke duck-panel:latest
   docker compose -f "$COMPOSE_FILE" up -d --force-recreate panel
   for _ in $(seq 1 36); do
     if docker inspect -f '{{.State.Status}}' duck-panel 2>/dev/null | grep -qx running \

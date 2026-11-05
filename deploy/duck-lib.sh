@@ -69,13 +69,20 @@ duck_rsync_repo_to_opt_source() {
   fi
 }
 
+duck_panel_image_smoke() {
+  local image="${1:-duck-panel:latest}"
+  docker run --rm --entrypoint python "$image" /code/deploy/panel-boot-smoke.py
+}
+
 duck_install_opt_deploy_files() {
   local d="$1"
   install -d /opt/duck/deploy /opt/duck
   cp "$d/docker-compose.yml" /opt/duck/docker-compose.yml
   cp "$d/duck.sh" "$d/duck-lib.sh" "$d/duck-node-bootstrap.sh" \
     "$d/env.template" "$d/xray_config.template.json" \
+    "$d/check-repo.sh" "$d/panel-boot-smoke.py" \
     "$d/docker-compose.yml" /opt/duck/deploy/
+  chmod +x /opt/duck/deploy/check-repo.sh 2>/dev/null || true
   chmod +x /opt/duck/deploy/*.sh
   for legacy in install fix-panel reinstall preflight acme-install-cert; do
     ln -sf /opt/duck/deploy/duck.sh "/opt/duck/deploy/${legacy}.sh"
@@ -276,6 +283,9 @@ duck_preflight() {
   check_grep "${ROOT}/Dockerfile" "import apscheduler; print('Duck image deps OK')"
   check_not "${ROOT}/Dockerfile" 'import pkg_resources'
   check_grep "${ROOT}/app/dashboard/__init__.py" '_normalize_dashboard_static_files'
+  if [[ -f "${DEPLOY}/check-repo.sh" ]]; then
+    bash "${DEPLOY}/check-repo.sh" || fail "仓库不完整（见 check-repo.sh）"
+  fi
   check_grep "${DEPLOY}/env.template" 'sqlite:////var/lib/duck'
   [[ -f "${DEPLOY}/duck-lib.sh" ]] || fail "缺少 deploy/duck-lib.sh"
   green "preflight OK"
