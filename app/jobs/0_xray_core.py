@@ -5,9 +5,15 @@ from app import app, logger, scheduler, xray
 from app.xray.config import main_core_config
 from app.db import GetDB, crud
 from app.models.node import NodeStatus
-from config import JOB_CORE_HEALTH_CHECK_INTERVAL
+from config import (
+    JOB_CORE_HEALTH_CHECK_INTERVAL,
+    NODE_HEALTH_FAILURES_BEFORE_RESTART,
+    NODE_HEALTH_SYS_STATS_TIMEOUT,
+)
 from app.node_expiry import check_all_node_expiries
 from xray_api import exc as xray_exc
+
+_node_health_failures: dict[int, int] = {}
 
 
 def core_health_check():
@@ -24,13 +30,20 @@ def core_health_check():
         if node.connected:
             try:
                 assert node.started
-                node.api.get_sys_stats(timeout=2)
+                node.api.get_sys_stats(timeout=NODE_HEALTH_SYS_STATS_TIMEOUT)
+                _node_health_failures.pop(node_id, None)
             except (ConnectionError, xray_exc.XrayError, AssertionError):
-                if not config:
-                    config = xray.config.include_db_users()
-                xray.operations.restart_node(node_id, config)
+                fails = _node_health_failures.get(node_id, 0) + 1
+                _node_health_failures[node_id] = fails
+                if fails >= max(1, NODE_HEALTH_FAILURES_BEFORE_RESTART):
+                    _node_health_failures.pop(node_id, None)
+                    if not config:
+                        config = xray.config.include_db_users()
+                    xray.operations.restart_node(node_id, config)
 
         if not node.connected:
+            if xray.operations.node_connect_in_progress(node_id):
+                continue
             if not config:
                 config = xray.config.include_db_users()
             xray.operations.connect_node(node_id, config)

@@ -79,14 +79,14 @@ class DuckXRayNode:
         if not self._session_id:
             return False
         try:
-            self.make_request("/ping", timeout=3)
+            self.make_request("/ping", timeout=5)
             return True
         except NodeAPIError:
             return False
 
     @property
     def started(self):
-        res = self.session.get(self._rest_api_url + "/", timeout=3, headers=self._headers())
+        res = self.session.get(self._rest_api_url + "/", timeout=5, headers=self._headers())
         if res.status_code != 200:
             return False
         return res.json().get("started", False)
@@ -102,7 +102,7 @@ class DuckXRayNode:
         return self._api
 
     def connect(self):
-        res = self.make_request("/connect", timeout=5)
+        res = self.make_request("/connect", timeout=8)
         self._session_id = res["session_id"]
 
     def disconnect(self):
@@ -115,7 +115,7 @@ class DuckXRayNode:
         self._api = None
 
     def get_version(self):
-        res = self.session.get(self._rest_api_url + "/", timeout=3, headers=self._headers())
+        res = self.session.get(self._rest_api_url + "/", timeout=5, headers=self._headers())
         return res.json().get("core_version")
 
     def start(self, config: XRayConfig):
@@ -135,7 +135,7 @@ class DuckXRayNode:
         self._started = True
         self._api = XRayAPI(address=self.address, port=self.api_port)
         try:
-            grpc.channel_ready_future(self._api._channel).result(timeout=8)
+            grpc.channel_ready_future(self._api._channel).result(timeout=12)
         except grpc.FutureTimeoutError as e:
             raise ConnectionError("Failed to connect to node Xray API") from e
 
@@ -156,7 +156,7 @@ class DuckXRayNode:
         self._started = True
         self._api = XRayAPI(address=self.address, port=self.api_port)
         try:
-            grpc.channel_ready_future(self._api._channel).result(timeout=8)
+            grpc.channel_ready_future(self._api._channel).result(timeout=12)
         except grpc.FutureTimeoutError as e:
             raise ConnectionError("Failed to connect to node Xray API") from e
 

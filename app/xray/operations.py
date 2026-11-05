@@ -213,6 +213,10 @@ global _connecting_nodes
 _connecting_nodes = {}
 
 
+def node_connect_in_progress(node_id: int) -> bool:
+    return bool(_connecting_nodes.get(node_id))
+
+
 @threaded_function
 def connect_node(node_id, config=None):
     global _connecting_nodes
@@ -237,8 +241,7 @@ def connect_node(node_id, config=None):
 
     try:
         node = xray.nodes[dbnode.id]
-        assert node.connected
-    except (KeyError, AssertionError):
+    except KeyError:
         node = xray.operations.add_node(dbnode)
 
     try:
@@ -269,6 +272,9 @@ def connect_node(node_id, config=None):
 
 @threaded_function
 def restart_node(node_id, config=None):
+    if node_connect_in_progress(node_id):
+        return
+
     with GetDB() as db:
         dbnode = crud.get_node_by_id(db, node_id)
 
@@ -308,4 +314,5 @@ __all__ = [
     "remove_node",
     "connect_node",
     "restart_node",
+    "node_connect_in_progress",
 ]
