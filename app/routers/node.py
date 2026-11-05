@@ -16,9 +16,11 @@ from app.duck_node import (
     inbound_tags_list,
     normalize_protocol_list,
     parse_proxy_ports,
+    parse_reality_meta,
     protocol_from_tag,
     reload_panel_xray_config,
     remove_node_inbounds_from_config,
+    resolve_node_ports_and_protocols,
     serialize_proxy_ports,
     sync_node_hosts,
 )
@@ -77,16 +79,23 @@ def _protocols_for_dbnode(dbnode) -> list[str]:
     return normalize_protocol_list(None)
 
 
-def _reprovision_node(dbnode, node_name: str, ports: dict | None) -> None:
-    if not ports:
-        raise ValueError("端口由节点决定；请在面板填写 proxy_ports，或在节点重装并上报")
-    protos = normalize_protocol_list(list(ports.keys()))
+def _reprovision_node(
+    dbnode,
+    node_name: str,
+    protocols: list[str],
+    ports: dict,
+    reality_sni: str | None = None,
+) -> None:
+    existing = parse_reality_meta(dbnode)
     tags_csv, final_ports, reality_json = apply_duck_node_provision(
-        node_name, ports=ports, protocols=protos
+        node_name,
+        ports=ports,
+        protocols=protocols,
+        existing_reality=existing,
+        reality_sni=reality_sni,
     )
     dbnode.inbound_tags = tags_csv
-    if reality_json:
-        dbnode.reality_meta = reality_json
+    dbnode.reality_meta = reality_json
     dbnode.proxy_ports = serialize_proxy_ports(final_ports)
     dbnode.proxy_port = final_ports.get("ss")
     reload_panel_xray_config()
@@ -205,7 +214,9 @@ def modify_node(
     try:
         need_reprovision = (
             modify.regenerate_proxy_ports
+            or modify.protocols is not None
             or modify.proxy_ports is not None
+            or modify.reality_sni is not None
             or (name_changed and inbound_tags_list(dbnode))
         )
         if need_reprovision:
@@ -214,17 +225,20 @@ def modify_node(
             if modify.regenerate_proxy_ports:
                 raise HTTPException(
                     status_code=400,
-                    detail="请重新生成安装命令，或在面板填写 proxy_ports 后保存",
+                    detail="请重新生成安装命令，或在面板调整协议/端口后保存",
                 )
-            if modify.proxy_ports is not None:
-                ports = {
-                    k: int(v)
-                    for k, v in modify.proxy_ports.model_dump().items()
-                    if v is not None
-                }
-            else:
-                ports = parse_proxy_ports(dbnode)
-            _reprovision_node(dbnode, new_name, ports=ports)
+            port_updates = (
+                modify.proxy_ports.model_dump() if modify.proxy_ports else None
+            )
+            protocols, ports = resolve_node_ports_and_protocols(
+                db, dbnode, modify.protocols, port_updates
+            )
+            sni = modify.reality_sni
+            if sni is None and parse_reality_meta(dbnode):
+                sni = parse_reality_meta(dbnode).get("sni")
+            _reprovision_node(
+                dbnode, new_name, protocols, ports, reality_sni=sni
+            )
             db.commit()
             db.refresh(dbnode)
             reprovisioned = True
@@ -245,7 +259,16 @@ def modify_node(
         _sync_hosts_for_node(dbnode)
 
     if dbnode.status != NodeStatus.disabled and not node_is_expired(dbnode):
-        bg.add_task(xray.operations.connect_node, node_id=dbnode.id)
+        if reprovisioned:
+            try:
+                if xray.nodes[dbnode.id].connected:
+                    bg.add_task(xray.operations.restart_node, node_id=dbnode.id)
+                else:
+                    bg.add_task(xray.operations.connect_node, node_id=dbnode.id)
+            except KeyError:
+                bg.add_task(xray.operations.connect_node, node_id=dbnode.id)
+        else:
+            bg.add_task(xray.operations.connect_node, node_id=dbnode.id)
 
     return dbnode
 

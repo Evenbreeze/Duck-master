@@ -3,11 +3,12 @@
 #   bash duck.sh preflight
 #   sudo bash duck.sh install
 #   sudo env DOMAIN=... EMAIL=... ADMIN_USER=... ADMIN_PASSWORD='...' bash duck.sh reinstall
-#   sudo bash duck.sh fix
+#   sudo duck upgrade          # 日常：GitHub 拉代码 + 重建（推荐）
+#   sudo bash duck.sh fix      # 不拉 git，只用本地目录
 #   duck status | restart | logs | cli ...
 set -euo pipefail
 
-DUCK_DEPLOY_SCRIPT_REV="2026-10-30"
+DUCK_DEPLOY_SCRIPT_REV="2026-11-05"
 MARZBAN_DIR="/opt/marzban"
 DATA_DIR="/var/lib/marzban"
 CERT_DIR="${DATA_DIR}/certs"
@@ -86,11 +87,11 @@ cmd_compose() {
     logs)       shift; dc logs -f "$SERVICE" "$@" ;;
     status)     dc ps ;;
     cli)        shift; dc exec -T "$SERVICE" duck-cli "$@" ;;
-    update|rebuild) dc build --no-cache "$SERVICE"; dc up -d --force-recreate "$SERVICE" ;;
+    rebuild) dc build --no-cache "$SERVICE"; dc up -d --force-recreate "$SERVICE" ;;
     ports)      cat /var/lib/marzban/duck-ports.env 2>/dev/null || cat /var/lib/marzban/xray_config.json ;;
     "")         dc ps ;;
     *)
-      echo "duck: up | restart | logs | status | cli | update | ports" >&2
+      echo "duck: up | restart | logs | status | cli | rebuild | ports | upgrade" >&2
       exit 1
       ;;
   esac
@@ -297,17 +298,27 @@ cmd_fix() {
   repo="$(duck_pick_repo_root "${SCRIPT_DIR}")" || { echo "找不到 Duck 源码" >&2; exit 1; }
   duck_rsync_repo_to_opt_source "${repo}"
   duck_install_opt_deploy_files "${repo}/deploy"
-  DUCK_SRC="${repo}" duck_preflight "${SCRIPT_DIR}"
+  DUCK_SRC="${repo}" duck_preflight "${repo}/deploy"
   docker compose -f "$COMPOSE_FILE" build --no-cache panel
   docker run --rm --entrypoint python duck-panel:latest -c "import apscheduler; print('OK')"
   docker compose -f "$COMPOSE_FILE" up -d --force-recreate panel
   for _ in $(seq 1 36); do
     docker inspect -f '{{.State.Status}}' duck-panel 2>/dev/null | grep -qx running \
-      && ss -tlnp | grep -q ':8000 ' && { echo "面板已就绪"; exit 0; }
+      && ss -tlnp | grep -q ':8000 ' && { green "面板已就绪"; exit 0; }
     sleep 5
   done
   docker logs duck-panel --tail 40
   exit 1
+}
+
+cmd_upgrade() {
+  need_root
+  green "=== Duck 升级 (${DUCK_GITHUB_REPO}) ==="
+  local repo
+  repo="$(duck_ensure_github_clone "${DUCK_REPO_DIR:-}")"
+  duck_pull_latest "$repo"
+  export DUCK_SRC="$repo"
+  bash "${repo}/deploy/duck.sh" fix
 }
 
 case "${1:-}" in
@@ -315,19 +326,25 @@ case "${1:-}" in
   acme-cert) shift; cmd_acme_cert "$@" ;;
   install) shift; cmd_install "$@" ;;
   reinstall) shift; cmd_reinstall "$@" ;;
+  upgrade|update|pull) shift; cmd_upgrade "$@" ;;
   fix|fix-panel) shift; cmd_fix "$@" ;;
-  up|start|restart|stop|down|logs|status|cli|update|rebuild|ports)
+  up|start|restart|stop|down|logs|status|cli|rebuild|ports)
     cmd_compose "$@"
     ;;
   help|-h|--help)
     cat <<EOF
-用法: bash duck.sh <命令>
-  preflight   安装前检查
-  install     主控安装（可交互）
-  reinstall   git pull + 重装（需 DOMAIN EMAIL ADMIN_USER ADMIN_PASSWORD）
-  fix         拉源码并重建面板
-  acme-cert   证书续期钩子（acme.sh 调用）
-  up|restart|logs|status|cli|update|ports  等同 duck 命令
+用法: bash duck.sh <命令>   仓库: https://github.com/${DUCK_GITHUB_REPO}
+
+  upgrade     一键：git 拉最新 + 检查 + 重建面板（日常用这个）
+  install     首次装主控（可交互）
+  reinstall   重装（需 DOMAIN EMAIL ADMIN_USER ADMIN_PASSWORD）
+  fix         不拉 git，用本机已有源码重建
+  preflight   仅检查
+  restart|logs|status|cli|rebuild|ports  运维
+
+一键（任意目录）:
+  curl -fsSL https://raw.githubusercontent.com/${DUCK_GITHUB_REPO}/master/deploy/duck.sh | sudo bash -s upgrade
+  （若默认分支是 main，把 URL 里的 master 改成 main）
 EOF
     ;;
   *)

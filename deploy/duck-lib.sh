@@ -1,6 +1,10 @@
 # shellcheck shell=bash
 # Duck 部署库：源码同步、端口、安装前检查
 
+DUCK_GITHUB_REPO="${DUCK_GITHUB_REPO:-Evenbreeze/Duck-master}"
+DUCK_GITHUB_URL="${DUCK_GITHUB_URL:-https://github.com/${DUCK_GITHUB_REPO}.git}"
+DUCK_DEFAULT_CLONE_DIR="${DUCK_DEFAULT_CLONE_DIR:-/root/Duck-master}"
+
 DUCK_DEFAULT_PORT_VLESS=443
 DUCK_DEFAULT_PORT_VMESS=8080
 DUCK_DEFAULT_PORT_TROJAN=2053
@@ -10,12 +14,45 @@ duck_pick_repo_root() {
   local script_dir="$1"
   [[ -n "${DUCK_SRC:-}" && -f "${DUCK_SRC}/Dockerfile" ]] && { echo "$DUCK_SRC"; return 0; }
   [[ -f "${script_dir}/../Dockerfile" ]] && { (cd "${script_dir}/.." && pwd); return 0; }
-  [[ -f /root/Duck-master/Dockerfile ]] && { echo /root/Duck-master; return 0; }
+  [[ -f "${DUCK_DEFAULT_CLONE_DIR}/Dockerfile" ]] && { echo "$DUCK_DEFAULT_CLONE_DIR"; return 0; }
   for d in /home/*/Duck-master; do
     [[ -f "${d}/Dockerfile" ]] && { echo "$d"; return 0; }
   done
   [[ -f /opt/duck/source/Dockerfile ]] && { echo /opt/duck/source; return 0; }
   return 1
+}
+
+duck_pull_latest() {
+  local repo="$1"
+  [[ -d "${repo}/.git" ]] || { echo "不是 git 仓库: ${repo}" >&2; return 1; }
+  git -C "$repo" fetch origin
+  if git -C "$repo" show-ref -q refs/remotes/origin/main; then
+    git -C "$repo" reset --hard origin/main
+  elif git -C "$repo" show-ref -q refs/remotes/origin/master; then
+    git -C "$repo" reset --hard origin/master
+  else
+    git -C "$repo" reset --hard FETCH_HEAD
+  fi
+}
+
+duck_ensure_github_clone() {
+  local repo="${1:-${DUCK_DEFAULT_CLONE_DIR}}"
+  if [[ -d "${repo}/.git" && -f "${repo}/Dockerfile" ]]; then
+    echo "$repo"
+    return 0
+  fi
+  local picked
+  picked="$(duck_pick_repo_root "${SCRIPT_DIR:-.}" 2>/dev/null || true)"
+  if [[ -n "$picked" && -d "${picked}/.git" ]]; then
+    echo "$picked"
+    return 0
+  fi
+  install -d "$(dirname "$repo")"
+  if [[ ! -d "${repo}/.git" ]]; then
+    echo "[upgrade] 克隆 ${DUCK_GITHUB_URL} -> ${repo}" >&2
+    git clone "${DUCK_GITHUB_URL}" "$repo"
+  fi
+  echo "$repo"
 }
 
 duck_rsync_repo_to_opt_source() {
@@ -225,7 +262,7 @@ duck_preflight() {
 
   [[ -f "${DEPLOY}/duck.sh" ]] || fail "找不到 deploy/duck.sh"
   [[ -f "${ROOT}/Dockerfile" ]] || fail "找不到 Dockerfile（可设 DUCK_SRC=）"
-  check_grep "${DEPLOY}/duck.sh" '2026-10-30'
+  check_grep "${DEPLOY}/duck.sh" '2026-11-05'
   check_grep "${ROOT}/requirements.txt" 'APScheduler==3.10'
   check_grep "${ROOT}/Dockerfile" "VITE_BASE_API=/api/"
   check_grep "${ROOT}/Dockerfile" "import apscheduler; print('Duck image deps OK')"

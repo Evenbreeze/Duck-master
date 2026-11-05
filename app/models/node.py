@@ -1,9 +1,11 @@
 import json
 from datetime import datetime, timezone
 from enum import Enum
-from typing import List, Optional
+from typing import List, Literal, Optional
 
-from pydantic import ConfigDict, BaseModel, Field, field_validator
+from pydantic import ConfigDict, BaseModel, Field, field_validator, model_validator
+
+DuckProtocol = Literal["vless", "vmess", "trojan", "ss"]
 
 
 class NodeStatus(str, Enum):
@@ -56,7 +58,6 @@ class NodeCreate(Node):
 
 
 class NodeModify(BaseModel):
-    """部分更新；端口/inbound 仅通过 reprovision 接口变更，不在此写入。"""
     name: Optional[str] = None
     address: Optional[str] = None
     port: Optional[int] = Field(None, ge=1, le=65535)
@@ -65,7 +66,9 @@ class NodeModify(BaseModel):
     usage_coefficient: Optional[float] = Field(None, gt=0)
     expire_at: Optional[int] = None
     regenerate_proxy_ports: bool = False
+    protocols: Optional[List[DuckProtocol]] = None
     proxy_ports: Optional[DuckProxyPorts] = None
+    reality_sni: Optional[str] = Field(None, max_length=253)
     model_config = ConfigDict(extra="ignore")
 
 
@@ -74,6 +77,8 @@ class NodeResponse(Node):
     xray_version: Optional[str] = None
     status: NodeStatus
     message: Optional[str] = None
+    protocols: List[DuckProtocol] = Field(default_factory=list)
+    reality_sni: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
 
     @field_validator("expire_at", mode="before")
@@ -109,6 +114,60 @@ class NodeResponse(Node):
                 return DuckProxyPorts.model_validate(inner)
             return None
         return DuckProxyPorts.model_validate(data)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _duck_node_extras(cls, data):
+        from app.duck_node import (
+            inbound_tags_list,
+            parse_proxy_ports,
+            parse_reality_meta,
+            protocol_from_tag,
+            normalize_protocol_list,
+        )
+
+        if not isinstance(data, dict):
+            raw_meta = getattr(data, "reality_meta", None)
+            sni = None
+            if raw_meta:
+                try:
+                    sni = json.loads(raw_meta).get("sni")
+                except json.JSONDecodeError:
+                    sni = None
+            tags = inbound_tags_list(data) or []
+            protos = [
+                protocol_from_tag(t) for t in tags if protocol_from_tag(t)
+            ]
+            ports = parse_proxy_ports(data)
+            if not protos and ports:
+                protos = list(ports.keys())
+            protos = normalize_protocol_list(protos) if protos else []
+            if isinstance(data, dict):
+                base = data
+            else:
+                base = {
+                    k: getattr(data, k)
+                    for k in (
+                        "id",
+                        "name",
+                        "address",
+                        "port",
+                        "api_port",
+                        "usage_coefficient",
+                        "proxy_port",
+                        "proxy_ports",
+                        "inbound_tags",
+                        "expire_at",
+                        "xray_version",
+                        "status",
+                        "message",
+                    )
+                    if hasattr(data, k)
+                }
+            base["protocols"] = protos
+            base["reality_sni"] = sni
+            return base
+        return data
 
 
 class NodeUsageResponse(BaseModel):

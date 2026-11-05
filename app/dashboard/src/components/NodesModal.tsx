@@ -12,6 +12,7 @@ import {
   ButtonProps,
   chakra,
   Checkbox,
+  Divider,
   FormControl,
   FormLabel,
   HStack,
@@ -29,27 +30,22 @@ import {
   useToast,
   VStack,
 } from "@chakra-ui/react";
-import {
-  SquaresPlusIcon,
-} from "@heroicons/react/24/outline";
+import { SquaresPlusIcon } from "@heroicons/react/24/outline";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   FetchNodesQueryKey,
-  getNodeDefaultValues,
   NodeSchema,
   NodeType,
   useNodes,
   useNodesQuery,
 } from "contexts/NodesContext";
 import dayjs from "dayjs";
-import { FC, ReactNode, useState } from "react";
+import { FC, ReactNode, useMemo, useState } from "react";
 import ReactDatePicker from "react-datepicker";
 import { Controller, useForm, UseFormReturn } from "react-hook-form";
-import { duckNodePortLabel } from "constants/UserSettings";
 import {
   UseMutateFunction,
   useMutation,
-  useQuery,
   useQueryClient,
 } from "react-query";
 import "slick-carousel/slick/slick-theme.css";
@@ -70,21 +66,44 @@ import { fetch } from "service/http";
 import { isNodeExpired } from "utils/nodeExpiry";
 import { Input } from "./Input";
 
+const PROTO_KEYS = ["vless", "vmess", "trojan", "ss"] as const;
+type ProtoKey = (typeof PROTO_KEYS)[number];
+
+const PROTO_LABEL: Record<ProtoKey, string> = {
+  vless: "VLESS",
+  vmess: "VMess",
+  trojan: "Trojan",
+  ss: "Shadowsocks",
+};
+
 const CustomInput = chakra(Input, {
   baseStyle: {
     bg: "white",
-    _dark: {
-      bg: "gray.700",
-    },
+    _dark: { bg: "gray.700" },
   },
 });
 
 const ModalIcon = chakra(SquaresPlusIcon, {
-  baseStyle: {
-    w: 5,
-    h: 5,
-  },
+  baseStyle: { w: 5, h: 5 },
 });
+
+function protocolFlagsFromNode(node: NodeType) {
+  const fromApi = node.protocols ?? [];
+  return {
+    vless: fromApi.includes("vless") || !!node.proxy_ports?.vless,
+    vmess: fromApi.includes("vmess") || !!node.proxy_ports?.vmess,
+    trojan: fromApi.includes("trojan") || !!node.proxy_ports?.trojan,
+    ss: fromApi.includes("ss") || !!node.proxy_ports?.ss,
+  };
+}
+
+function nodeFormDefaults(node: NodeType): NodeType {
+  return {
+    ...node,
+    protocol_flags: protocolFlagsFromNode(node),
+    reality_sni: node.reality_sni ?? "www.apple.com",
+  };
+}
 
 type AccordionInboundType = {
   toggleAccordion: () => void;
@@ -95,15 +114,21 @@ const NodeAccordion: FC<AccordionInboundType> = ({ toggleAccordion, node }) => {
   const { updateNode, reconnectNode, setDeletingNode } = useNodes();
   const queryClient = useQueryClient();
   const toast = useToast();
+  const pending = !node.proxy_ports && node.status === "connecting";
+
   const form = useForm<NodeType>({
-    defaultValues: node,
+    defaultValues: nodeFormDefaults(node),
     resolver: zodResolver(NodeSchema),
   });
+
   const handleDeleteNode = setDeletingNode.bind(null, node);
 
   const { isLoading, mutate } = useMutation(updateNode, {
     onSuccess: () => {
-      generateSuccessMessage("节点更新成功", toast);
+      generateSuccessMessage(
+        pending ? "节点已保存" : "已推送到节点，稍候看状态",
+        toast
+      );
       queryClient.invalidateQueries(FetchNodesQueryKey);
     },
     onError: (e) => {
@@ -153,21 +178,15 @@ const NodeAccordion: FC<AccordionInboundType> = ({ toggleAccordion, node }) => {
           </Text>
           <HStack>
             {node.xray_version && (
-              <Badge
-                colorScheme="blue"
-                rounded="full"
-                display="inline-flex"
-                px={3}
-                py={1}
-              >
-                <Text
-                  textTransform="capitalize"
-                  fontSize="0.7rem"
-                  fontWeight="medium"
-                  letterSpacing="tighter"
-                >
+              <Badge colorScheme="blue" rounded="full" px={3} py={1}>
+                <Text fontSize="0.7rem" fontWeight="medium">
                   Xray {node.xray_version}
                 </Text>
+              </Badge>
+            )}
+            {pending && (
+              <Badge colorScheme="orange" rounded="full">
+                待安装
               </Badge>
             )}
             {node.expire_at ? (
@@ -189,224 +208,188 @@ const NodeAccordion: FC<AccordionInboundType> = ({ toggleAccordion, node }) => {
         <AccordionIcon />
       </AccordionButton>
       <AccordionPanel px={2} pb={2}>
-        <VStack pb={3} alignItems="flex-start">
-          {nodeStatus === "error" && !expired && (
-            <Alert status="error" size="xs">
-              <Box>
-                <HStack w="full">
-                  <AlertIcon w={4} />
-                  <Text marginInlineEnd={0}>{node.message}</Text>
-                </HStack>
-                <HStack justifyContent="flex-end" w="full">
-                  <Button
-                    size="sm"
-                    aria-label="重新连接节点"
-                    leftIcon={<ReloadIcon />}
-                    onClick={() => reconnect()}
-                    disabled={isReconnecting}
-                  >
-                    {isReconnecting
-                      ? "重连中..."
-                      : "重新连接"}
-                  </Button>
-                </HStack>
-              </Box>
-            </Alert>
-          )}
-        </VStack>
-        <NodeForm
-          form={form}
-          mutate={mutate}
-          isLoading={isLoading}
-          submitBtnText={"保存"}
-          isEdit
-          btnLeftAdornment={
-            <Tooltip label={"删除"} placement="top">
-              <IconButton
-                colorScheme="red"
-                variant="ghost"
-                size="sm"
-                aria-label="删除节点"
-                onClick={handleDeleteNode}
+        {nodeStatus === "error" && !expired && (
+          <Alert status="error" size="sm" mb={2}>
+            <AlertIcon />
+            <Box flex="1">
+              <Text fontSize="sm">{node.message}</Text>
+              <Button
+                size="xs"
+                mt={2}
+                leftIcon={<ReloadIcon />}
+                onClick={() => reconnect()}
+                isLoading={isReconnecting}
               >
-                <DeleteIcon />
-              </IconButton>
-            </Tooltip>
-          }
-        />
+                重新连接
+              </Button>
+            </Box>
+          </Alert>
+        )}
+        {pending ? (
+          <Text fontSize="sm" color="gray.500">
+            该节点尚未执行安装命令。请在上方重新生成命令，或删除后重建。
+          </Text>
+        ) : (
+          <NodeEditForm
+            form={form}
+            mutate={mutate}
+            isLoading={isLoading}
+            btnLeftAdornment={
+              <Tooltip label="删除">
+                <IconButton
+                  colorScheme="red"
+                  variant="ghost"
+                  size="sm"
+                  aria-label="删除节点"
+                  onClick={handleDeleteNode}
+                >
+                  <DeleteIcon />
+                </IconButton>
+              </Tooltip>
+            }
+          />
+        )}
       </AccordionPanel>
     </AccordionItem>
   );
 };
 
-type NodeFormType = FC<{
+const NodeEditForm: FC<{
   form: UseFormReturn<NodeType>;
-  mutate: UseMutateFunction<unknown, unknown, any>;
+  mutate: UseMutateFunction<unknown, unknown, NodeType>;
   isLoading: boolean;
-  submitBtnText: string;
-  btnProps?: Partial<ButtonProps>;
   btnLeftAdornment?: ReactNode;
-  addAsHost?: boolean;
-  isEdit?: boolean;
-}>;
-
-const NodeForm: NodeFormType = ({
-  form,
-  mutate,
-  isLoading,
-  submitBtnText,
-  btnProps = {},
-  btnLeftAdornment,
-  addAsHost = false,
-  isEdit = false,
-}) => {
-  const duckDedicated = form.watch("duck_dedicated_inbounds") !== false;
-  const duckManual = form.watch("duck_manual_ports") === true;
-  const proxyPorts = form.watch("proxy_ports");
+}> = ({ form, mutate, isLoading, btnLeftAdornment }) => {
+  const flags = form.watch("protocol_flags") ?? protocolFlagsFromNode(form.getValues());
 
   const buildPayload = (values: NodeType) => {
-    const body: Record<string, unknown> = { ...values };
-    delete body.duck_manual_ports;
-    delete body.duck_dedicated_inbounds;
-    if (isEdit) {
-      delete body.proxy_ports;
-      delete body.proxy_port;
-      delete body.inbound_tags;
-      delete body.duck_dedicated_inbounds;
-      delete body.add_as_new_host;
-      if (body.expire_at === undefined) {
-        body.expire_at = null;
+    const protocols = PROTO_KEYS.filter((k) => flags[k]);
+    const proxy_ports: Record<string, number> = {};
+    for (const k of protocols) {
+      const raw = values.proxy_ports?.[k];
+      if (raw !== undefined && raw !== "" && !Number.isNaN(Number(raw))) {
+        proxy_ports[k] = Number(raw);
       }
-      return body;
     }
-    if (body.expire_at === undefined) {
-      delete body.expire_at;
-    }
-    if (values.duck_dedicated_inbounds === false) {
-      delete body.proxy_ports;
-    } else if (!values.duck_manual_ports) {
-      delete body.proxy_ports;
-      delete body.proxy_port;
-    } else if (values.proxy_ports) {
-      body.proxy_ports = values.proxy_ports;
-    }
-    return body;
+    return {
+      id: values.id,
+      name: values.name,
+      address: values.address,
+      port: values.port,
+      api_port: values.api_port,
+      status: values.status,
+      usage_coefficient: values.usage_coefficient,
+      expire_at: values.expire_at ?? null,
+      protocols,
+      proxy_ports,
+      reality_sni: values.reality_sni?.trim() || undefined,
+    };
   };
 
   return (
-    <form onSubmit={form.handleSubmit((v) => mutate(buildPayload(v)))}>
-      <VStack>
-        <HStack w="full">
-          <FormControl>
-            <CustomInput
-              label={"名称"}
-              size="sm"
-              placeholder="例如 Duck-S2"
-              {...form.register("name")}
-              error={form.formState?.errors?.name?.message}
-            />
-          </FormControl>
-          <HStack px={1}>
-            <Controller
-              name="status"
-              control={form.control}
-              render={({ field }) => {
-                return (
-                  <Tooltip
-                    key={field.value}
-                    placement="top"
-                    label={
-                      `${"状态"}: ` +
-                      (field.value !== "disabled" ? "激活" : "禁用")
+    <form onSubmit={form.handleSubmit((v) => mutate(buildPayload(v) as NodeType))}>
+      <VStack align="stretch" spacing={3}>
+        <HStack>
+          <CustomInput
+            label="名称"
+            size="sm"
+            flex={1}
+            {...form.register("name")}
+            error={form.formState.errors.name?.message}
+          />
+          <Controller
+            name="status"
+            control={form.control}
+            render={({ field }) => (
+              <Tooltip label={field.value !== "disabled" ? "启用" : "禁用"}>
+                <Box pt={6}>
+                  <Switch
+                    colorScheme="primary"
+                    isChecked={field.value !== "disabled"}
+                    onChange={(e) =>
+                      field.onChange(e.target.checked ? "connecting" : "disabled")
                     }
-                    textTransform="capitalize"
-                  >
-                    <Box mt="6">
-                      <Switch
-                        colorScheme="primary"
-                        isChecked={field.value !== "disabled"}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            field.onChange("connecting");
-                          } else {
-                            field.onChange("disabled");
-                          }
-                        }}
-                      />
-                    </Box>
-                  </Tooltip>
-                );
-              }}
-            />
-          </HStack>
+                  />
+                </Box>
+              </Tooltip>
+            )}
+          />
         </HStack>
-        <HStack alignItems="flex-start" w="100%">
-          <Box w="100%">
-            <CustomInput
-              label={"地址"}
-              size="sm"
-              placeholder="例如 51.20.12.13"
-              {...form.register("address")}
-              error={form.formState?.errors?.address?.message}
-            />
-          </Box>
-        </HStack>
-        {!isEdit && (
-          <FormControl py={1}>
-            <Checkbox
-              defaultChecked
-              {...form.register("duck_dedicated_inbounds")}
-            >
-              <FormLabel m={0}>{"四协议独立入站（VLESS/VMess/Trojan/SS，推荐）"}</FormLabel>
-            </Checkbox>
-          </FormControl>
-        )}
-        {!isEdit && duckDedicated && (
-          <FormControl py={1}>
-            <Checkbox {...form.register("duck_manual_ports")}>
-              <FormLabel m={0}>{"自定义四协议端口（不勾选则随机）"}</FormLabel>
-            </Checkbox>
-          </FormControl>
-        )}
-        {!isEdit && duckDedicated && duckManual && (
-          <HStack alignItems="flex-start" w="100%" flexWrap="wrap">
-            {(["vless", "vmess", "trojan", "ss"] as const).map((key) => (
-              <Box key={key} minW="45%" flex="1">
-                <CustomInput
-                  label={duckNodePortLabel[key]}
-                  size="sm"
-                  placeholder="19769"
-                  {...form.register(`proxy_ports.${key}` as const)}
-                />
-              </Box>
+
+        <CustomInput
+          label="节点 IP / 域名"
+          size="sm"
+          placeholder="51.20.12.13"
+          {...form.register("address")}
+          error={form.formState.errors.address?.message}
+        />
+
+        <Box>
+          <FormLabel fontSize="sm" mb={1}>
+            代理协议（勾选后保存，主控会改配置并推到节点）
+          </FormLabel>
+          <HStack wrap="wrap" spacing={4}>
+            {PROTO_KEYS.map((key) => (
+              <Checkbox
+                key={key}
+                isChecked={!!flags[key]}
+                onChange={(e) => {
+                  form.setValue(`protocol_flags.${key}`, e.target.checked, {
+                    shouldDirty: true,
+                  });
+                }}
+              >
+                {PROTO_LABEL[key]}
+              </Checkbox>
             ))}
           </HStack>
+        </Box>
+
+        <HStack wrap="wrap" align="flex-start">
+          {PROTO_KEYS.filter((k) => flags[k]).map((key) => (
+            <Box key={key} minW="45%" flex={1}>
+              <CustomInput
+                label={`${PROTO_LABEL[key]} 端口`}
+                size="sm"
+                placeholder="留空则主控自动分配"
+                {...form.register(`proxy_ports.${key}` as const)}
+              />
+            </Box>
+          ))}
+        </HStack>
+
+        {flags.vless && (
+          <CustomInput
+            label="VLESS REALITY 伪装域名 (SNI)"
+            size="sm"
+            placeholder="www.apple.com"
+            {...form.register("reality_sni")}
+            error={form.formState.errors.reality_sni?.message}
+          />
         )}
-        {isEdit && proxyPorts ? (
-          <Box w="full" fontSize="xs" color="gray.600" _dark={{ color: "gray.400" }}>
-            <Text fontWeight="medium" mb={1}>
-              {"当前节点代理端口"}
-            </Text>
-            <Text fontFamily="mono">
-              {(
-                [
-                  ["vless", "VLESS"],
-                  ["vmess", "VMess"],
-                  ["trojan", "Trojan"],
-                  ["ss", "SS"],
-                ] as const
-              )
-                .filter(([k]) => proxyPorts?.[k])
-                .map(([k, label]) => `${label} ${proxyPorts?.[k]}`)
-                .join(" · ") || "—"}
-            </Text>
-            <Text mt={1}>
-              {"端口由主控分配；安装后可在面板修改节点并保存，主控会重推配置。"}
-            </Text>
-          </Box>
-        ) : null}
-        <FormControl w="full">
-          <FormLabel>{"到期日期"}</FormLabel>
+
+        <HStack>
+          <CustomInput
+            label="Agent 端口"
+            size="sm"
+            {...form.register("port")}
+            error={form.formState.errors.port?.message}
+          />
+          <CustomInput
+            label="Xray API 端口"
+            size="sm"
+            {...form.register("api_port")}
+            error={form.formState.errors.api_port?.message}
+          />
+          <CustomInput
+            label="流量系数"
+            size="sm"
+            {...form.register("usage_coefficient")}
+          />
+        </HStack>
+
+        <FormControl>
+          <FormLabel fontSize="sm">到期日</FormLabel>
           <Controller
             control={form.control}
             name="expire_at"
@@ -416,20 +399,16 @@ const NodeForm: NodeFormType = ({
                 dateFormat="yyyy-MM-dd"
                 isClearable
                 selected={
-                  field.value
-                    ? dayjs.unix(field.value).toDate()
-                    : undefined
+                  field.value ? dayjs.unix(field.value).toDate() : undefined
                 }
                 onChange={(date: Date | null) => {
                   if (!date) {
                     field.onChange(null);
                     return;
                   }
-                  const end = dayjs(date)
-                    .hour(23)
-                    .minute(59)
-                    .second(59);
-                  field.onChange(end.unix());
+                  field.onChange(
+                    dayjs(date).hour(23).minute(59).second(59).unix()
+                  );
                 }}
                 customInput={
                   <Input size="sm" borderRadius="6px" clearable={false} />
@@ -437,59 +416,18 @@ const NodeForm: NodeFormType = ({
               />
             )}
           />
-          <Text fontSize="xs" color="gray.500" mt={1}>
-            {"留空表示永不到期；到期后节点自动下线，订阅中不再包含该节点。"}
-          </Text>
         </FormControl>
-        <HStack alignItems="flex-start" w="100%">
-        <Box>
-            <CustomInput
-              label={"端口"}
-              size="sm"
-              placeholder="62050"
-              {...form.register("port")}
-              error={form.formState?.errors?.port?.message}
-            />
-          </Box>
-          <Box>
-            <CustomInput
-              label={"API 端口"}
-              size="sm"
-              placeholder="62051"
-              {...form.register("api_port")}
-              error={form.formState?.errors?.api_port?.message}
-            />
-          </Box>
-          <Box>
-            <CustomInput
-              label={"使用系数"}
-              size="sm"
-              placeholder="1"
-              {...form.register("usage_coefficient")}
-              error={form.formState?.errors?.usage_coefficient?.message}
-            />
-          </Box>
-        </HStack>
-        {addAsHost && !duckDedicated && (
-          <FormControl py={1}>
-            <Checkbox {...form.register("add_as_new_host")}>
-              <FormLabel m={0}>{"为每个入站请求添加此节点作为新主机"}</FormLabel>
-            </Checkbox>
-          </FormControl>
-        )}
+
         <HStack w="full">
           {btnLeftAdornment}
           <Button
-            flexGrow={1}
+            flex={1}
             type="submit"
             colorScheme="primary"
             size="sm"
-            px={5}
-            w="full"
             isLoading={isLoading}
-            {...btnProps}
           >
-            {submitBtnText}
+            保存并推送到节点
           </Button>
         </HStack>
       </VStack>
@@ -501,8 +439,11 @@ export const NodesDialog: FC = () => {
   const { isEditingNodes, onEditingNodes } = useDashboard();
   const toast = useToast();
   const queryClient = useQueryClient();
-  const [openAccordions, setOpenAccordions] = useState<any>({});
+  const [openAccordions, setOpenAccordions] = useState<Record<string, unknown>>(
+    {}
+  );
   const [installCommand, setInstallCommand] = useState("");
+  const [enrollName, setEnrollName] = useState("");
   const [enrollProtocols, setEnrollProtocols] = useState({
     vless: true,
     vmess: false,
@@ -518,41 +459,60 @@ export const NodesDialog: FC = () => {
   };
 
   const toggleAccordion = (index: number | string) => {
-    if (openAccordions[String(index)]) {
-      delete openAccordions[String(index)];
-    } else openAccordions[String(index)] = {};
-
-    setOpenAccordions({ ...openAccordions });
+    const key = String(index);
+    setOpenAccordions((prev) => {
+      const next = { ...prev };
+      if (next[key]) delete next[key];
+      else next[key] = {};
+      return next;
+    });
   };
+
+  const enrollBusy = useMemo(
+    () => !enrollName.trim() || !Object.values(enrollProtocols).some(Boolean),
+    [enrollName, enrollProtocols]
+  );
 
   return (
     <>
       <Modal isOpen={isEditingNodes} onClose={onClose}>
         <ModalOverlay bg="blackAlpha.300" backdropFilter="blur(10px)" />
-        <ModalContent mx="3" w="fit-content" maxW="3xl">
-          <ModalHeader pt={6}>
-            <Icon color="primary">
-              <ModalIcon color="white" />
-            </Icon>
+        <ModalContent mx="3" maxW="lg">
+          <ModalHeader pt={6} pb={0}>
+            <HStack>
+              <Icon color="primary">
+                <ModalIcon color="white" />
+              </Icon>
+              <Text fontSize="lg">节点</Text>
+            </HStack>
           </ModalHeader>
           <ModalCloseButton mt={3} />
-          <ModalBody w="440px" pb={6} pt={3}>
-            <Text mb={3} opacity={0.8} fontSize="sm">
-              {
-                "协议在此勾选；端口与 Agent 口由主控分配并写入安装命令。装好后用户/订阅/Host 均在主控操作，节点只跑代理。"
-              }
+          <ModalBody pb={6} pt={3}>
+            <Text fontSize="sm" color="gray.600" _dark={{ color: "gray.400" }} mb={3}>
+              新节点：主控定协议和端口，VPS 只跑一条安装命令。已上线节点：在下面改协议/端口/SNI，保存即推送。
             </Text>
-            <FormControl mb={2}>
-              <FormLabel fontSize="sm">{"节点协议"}</FormLabel>
-              <HStack wrap="wrap" spacing={4}>
-                {(
-                  [
-                    ["vless", "VLESS"],
-                    ["vmess", "VMess"],
-                    ["trojan", "Trojan"],
-                    ["ss", "SS"],
-                  ] as const
-                ).map(([key, label]) => (
+
+            <Box
+              p={3}
+              borderWidth="1px"
+              borderRadius="md"
+              _dark={{ borderColor: "gray.600" }}
+              mb={4}
+            >
+              <Text fontWeight="medium" fontSize="sm" mb={2}>
+                1. 添加新节点
+              </Text>
+              <CustomInput
+                label="节点名称"
+                size="sm"
+                mb={2}
+                placeholder="香港-01"
+                value={enrollName}
+                onChange={(e) => setEnrollName(e.target.value)}
+              />
+              <FormLabel fontSize="sm">安装时启用的协议</FormLabel>
+              <HStack wrap="wrap" spacing={4} mb={3}>
+                {PROTO_KEYS.map((key) => (
                   <Checkbox
                     key={key}
                     isChecked={enrollProtocols[key]}
@@ -563,76 +523,65 @@ export const NodesDialog: FC = () => {
                       }))
                     }
                   >
-                    {label}
+                    {PROTO_LABEL[key]}
                   </Checkbox>
                 ))}
               </HStack>
-            </FormControl>
-            <Button
-              size="sm"
-              colorScheme="primary"
-              mb={2}
-              w="full"
-              onClick={async () => {
-                const name = window.prompt("新节点名称（如 香港-01）");
-                if (!name?.trim()) return;
-                const protocols = (
-                  Object.entries(enrollProtocols) as [
-                    keyof typeof enrollProtocols,
-                    boolean
-                  ][]
-                )
-                  .filter(([, on]) => on)
-                  .map(([p]) => p);
-                if (!protocols.length) {
-                  generateErrorMessage(new Error("请至少勾选一种协议"), toast);
-                  return;
-                }
-                try {
-                  const res = await enrollNode(name.trim(), protocols);
-                  const portsLine = res.proxy_ports
-                    ? `# 主控分配端口: ${JSON.stringify(res.proxy_ports)} agent ${res.service_port}/${res.api_port}\n`
-                    : "";
-                  setInstallCommand(portsLine + res.install_command);
-                  queryClient.invalidateQueries(FetchNodesQueryKey);
-                  generateSuccessMessage("已生成安装命令，复制到新 VPS 执行", toast);
-                } catch (e) {
-                  generateErrorMessage(e, toast);
-                }
-              }}
-            >
-              {"生成节点安装命令"}
-            </Button>
-            {installCommand ? (
-              <Textarea
-                mb={3}
-                fontSize="xs"
-                rows={3}
-                readOnly
-                value={installCommand}
-                onFocus={(e) => e.target.select()}
-              />
-            ) : null}
-            {isLoading && "加载中..."}
+              <Button
+                size="sm"
+                colorScheme="primary"
+                w="full"
+                isDisabled={enrollBusy}
+                onClick={async () => {
+                  const protocols = PROTO_KEYS.filter((p) => enrollProtocols[p]);
+                  try {
+                    const res = await enrollNode(enrollName.trim(), protocols);
+                    const portsLine = res.proxy_ports
+                      ? `# 端口 ${JSON.stringify(res.proxy_ports)} · Agent ${res.service_port}/${res.api_port}\n`
+                      : "";
+                    setInstallCommand(portsLine + res.install_command);
+                    queryClient.invalidateQueries(FetchNodesQueryKey);
+                    generateSuccessMessage("复制下面命令到新 VPS 执行", toast);
+                  } catch (e) {
+                    generateErrorMessage(e, toast);
+                  }
+                }}
+              >
+                生成安装命令
+              </Button>
+              {installCommand ? (
+                <Textarea
+                  mt={2}
+                  fontSize="xs"
+                  rows={4}
+                  readOnly
+                  value={installCommand}
+                  onFocus={(e) => e.target.select()}
+                />
+              ) : null}
+            </Box>
+
+            <Divider mb={3} />
+
+            <Text fontWeight="medium" fontSize="sm" mb={2}>
+              2. 已添加的节点
+            </Text>
+            {isLoading && <Text fontSize="sm">加载中…</Text>}
 
             <Accordion
               w="full"
               allowToggle
-              index={Object.keys(openAccordions).map((i) => parseInt(i))}
+              index={Object.keys(openAccordions).map((i) => parseInt(i, 10))}
             >
               <VStack w="full">
                 {!isLoading &&
-                  nodes &&
-                  nodes.map((node, index) => {
-                    return (
-                      <NodeAccordion
-                        toggleAccordion={() => toggleAccordion(index)}
-                        key={node.name}
-                        node={node}
-                      />
-                    );
-                  })}
-
+                  nodes?.map((node, index) => (
+                    <NodeAccordion
+                      key={node.id ?? node.name}
+                      toggleAccordion={() => toggleAccordion(index)}
+                      node={node}
+                    />
+                  ))}
               </VStack>
             </Accordion>
           </ModalBody>

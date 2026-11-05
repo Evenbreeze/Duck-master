@@ -43,6 +43,18 @@ export const NodeSchema = z.object({
   proxy_ports: DuckProxyPortsSchema.optional(),
   inbound_tags: z.string().optional(),
   expire_at: z.number().nullable().optional(),
+  protocols: z
+    .array(z.enum(["vless", "vmess", "trojan", "ss"]))
+    .optional(),
+  reality_sni: z.string().max(253).optional(),
+  protocol_flags: z
+    .object({
+      vless: z.boolean().optional(),
+      vmess: z.boolean().optional(),
+      trojan: z.boolean().optional(),
+      ss: z.boolean().optional(),
+    })
+    .optional(),
 });
 
 export type NodeType = z.infer<typeof NodeSchema>;

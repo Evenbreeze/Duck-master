@@ -390,17 +390,96 @@ def _template_inbound(cfg: dict, template_tag: str) -> dict:
     raise ValueError(f"Xray 配置缺少模板入站 {template_tag}")
 
 
+def _prune_node_protocol_inbounds(cfg: dict, node_name: str, protocols: List[str]) -> None:
+    tags_map = node_inbound_tags(node_name)
+    all_tags = set(tags_map.values())
+    allowed = {tags_map[p] for p in normalize_protocol_list(protocols)}
+    cfg["inbounds"] = [
+        ib
+        for ib in cfg.get("inbounds", [])
+        if ib.get("tag") not in all_tags or ib.get("tag") in allowed
+    ]
+
+
+def _with_reality_sni(meta: dict, sni: Optional[str]) -> dict:
+    out = dict(meta)
+    if not sni or not str(sni).strip():
+        return out
+    host = str(sni).strip()
+    out["sni"] = host
+    out["dest"] = host if ":" in host else f"{host}:443"
+    return out
+
+
+def parse_reality_meta(dbnode: "DBNode") -> Optional[dict]:
+    raw = getattr(dbnode, "reality_meta", None)
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else None
+    except json.JSONDecodeError:
+        return None
+
+
+def resolve_node_ports_and_protocols(
+    db,
+    dbnode: "DBNode",
+    protocols: Optional[List[str]],
+    port_updates: Optional[Dict[str, Optional[int]]],
+) -> tuple[List[str], Dict[str, int]]:
+    """主控合并协议勾选与端口；新协议自动分配未占用端口。"""
+    current = parse_proxy_ports(dbnode) or {}
+    if protocols is not None:
+        protos = normalize_protocol_list(protocols)
+    elif current:
+        protos = normalize_protocol_list(list(current.keys()))
+    else:
+        protos = _protocols_from_tags(dbnode)
+
+    ports: Dict[str, int] = {k: int(v) for k, v in current.items() if k in protos}
+    if port_updates:
+        for key, val in port_updates.items():
+            if key not in DUCK_PROTOCOLS or val is None:
+                continue
+            ports[key] = int(val)
+
+    missing = [p for p in protos if p not in ports or not ports[p]]
+    if missing:
+        provided = {p: ports[p] for p in missing if p in ports and ports[p]}
+        allocated = allocate_ports_for_protocols(db, missing, provided or None)
+        ports.update(allocated)
+
+    ports = {k: ports[k] for k in protos}
+    if not protos:
+        raise ValueError("请至少选择一种协议")
+    return protos, ports
+
+
+def _protocols_from_tags(dbnode: "DBNode") -> List[str]:
+    tags = inbound_tags_list(dbnode) or []
+    protos = [protocol_from_tag(t) for t in tags if protocol_from_tag(t)]
+    return normalize_protocol_list(protos) if protos else list(DUCK_PROTOCOLS)
+
+
 def provision_node_inbounds(
     node_name: str,
     ports: Dict[str, int],
     protocols: Optional[List[str]] = None,
+    existing_reality: Optional[dict] = None,
+    reality_sni: Optional[str] = None,
 ) -> tuple[List[str], Optional[dict]]:
     """为主控 xray_config 增加节点入站；VLESS 用 REALITY。"""
     cfg = _load_xray_file()
     tags_map = node_inbound_tags(node_name)
     created: List[str] = []
-    reality_meta: Optional[dict] = None
     protos = normalize_protocol_list(protocols)
+    _prune_node_protocol_inbounds(cfg, node_name, protos)
+
+    reality_meta: Optional[dict] = None
+    if "vless" in protos:
+        reality_meta = existing_reality or generate_reality_meta()
+        reality_meta = _with_reality_sni(reality_meta, reality_sni)
 
     for proto in protos:
         tag = tags_map[proto]
@@ -409,6 +488,10 @@ def provision_node_inbounds(
         for ib in cfg.get("inbounds", []):
             if ib.get("tag") == tag:
                 ib["port"] = port
+                if proto == "vless" and reality_meta:
+                    _apply_node_vless_reality(ib, reality_meta)
+                elif proto in ("vmess", "trojan"):
+                    _strip_tls_for_node(ib)
                 found = True
                 break
         if not found:
@@ -416,7 +499,8 @@ def provision_node_inbounds(
             ib["tag"] = tag
             ib["port"] = port
             if proto == "vless":
-                reality_meta = generate_reality_meta()
+                if not reality_meta:
+                    reality_meta = _with_reality_sni(generate_reality_meta(), reality_sni)
                 _apply_node_vless_reality(ib, reality_meta)
             elif proto in ("vmess", "trojan"):
                 _strip_tls_for_node(ib)
@@ -426,6 +510,9 @@ def provision_node_inbounds(
             cfg.setdefault("inbounds", []).append(ib)
         created.append(tag)
 
+    if "vless" not in protos:
+        reality_meta = None
+
     _save_xray_file(cfg)
     return created, reality_meta
 
@@ -434,15 +521,22 @@ def apply_duck_node_provision(
     node_name: str,
     ports: Dict[str, int],
     protocols: Optional[List[str]] = None,
+    existing_reality: Optional[dict] = None,
+    reality_sni: Optional[str] = None,
 ) -> tuple[str, Dict[str, int], Optional[str]]:
-    """ports 必须由节点上报；主控不再随机分配代理端口。"""
     protos = normalize_protocol_list(protocols)
     final: Dict[str, int] = {}
     for proto in protos:
         if proto not in ports or not ports[proto]:
             raise ValueError(f"缺少节点端口: {proto}")
         final[proto] = int(ports[proto])
-    tags, reality_meta = provision_node_inbounds(node_name, final, protocols=protos)
+    tags, reality_meta = provision_node_inbounds(
+        node_name,
+        final,
+        protocols=protos,
+        existing_reality=existing_reality,
+        reality_sni=reality_sni,
+    )
     reality_json = json.dumps(reality_meta) if reality_meta else None
     return ",".join(tags), final, reality_json
 
