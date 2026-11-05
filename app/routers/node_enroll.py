@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import secrets
+import shlex
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Literal, Optional
@@ -29,7 +30,7 @@ from app.duck_node import (
 from app.models.admin import Admin
 from app.models.node import NodeStatus
 from app.utils import responses
-from config import XRAY_SUBSCRIPTION_URL_PREFIX
+from config import UVICORN_SSL_CA_TYPE, XRAY_SUBSCRIPTION_URL_PREFIX
 
 from fastapi.responses import FileResponse, PlainTextResponse
 
@@ -113,11 +114,21 @@ def _build_install_command(
             env.append(f"{key}={ports[proto]}")
     env.append(f"DUCK_SERVICE_PORT={service_port}")
     env.append(f"DUCK_API_PORT={api_port}")
+    if (UVICORN_SSL_CA_TYPE or "public").lower() == "private":
+        env.append("DUCK_INSECURE_MASTER_SSL=1")
     env_str = " ".join(env)
-    return (
-        f"sudo env {env_str} curl -fsSL {base}/api/node/bootstrap.sh | "
-        f"sudo -E bash -s -- {token} {base} {proto_csv}"
+    curl_url = f"{base}/api/node/bootstrap.sh"
+    curl_bin = "curl -fsSLk" if (UVICORN_SSL_CA_TYPE or "public").lower() == "private" else "curl -fsSL"
+    inner = (
+        "export DEBIAN_FRONTEND=noninteractive; "
+        "if command -v apt-get >/dev/null; then "
+        "apt-get update -qq && apt-get install -y -qq ca-certificates curl jq >/dev/null; "
+        "fi; "
+        f"{curl_bin} {shlex.quote(curl_url)} | "
+        f"bash -s -- {shlex.quote(token)} {shlex.quote(base)} {shlex.quote(proto_csv)}"
     )
+    # 整段须 root（systemctl / 写 /opt）；sudo env 注入端口变量
+    return f"sudo env {env_str} bash -c {shlex.quote(inner)}"
 
 
 @router.get("/node/bootstrap.sh")

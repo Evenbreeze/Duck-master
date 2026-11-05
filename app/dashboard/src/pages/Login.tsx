@@ -70,7 +70,14 @@ export const Login: FC = () => {
         navigate("/");
       })
       .catch((err) => {
-        setError(err.response._data.detail);
+        const detail = err?.response?._data?.detail;
+        setError(
+          detail === "Incorrect username or password"
+            ? "用户名或密码错误"
+            : typeof detail === "string"
+              ? detail
+              : "登录失败，请重试"
+        );
       })
       .finally(() => setLoading(false));
   };

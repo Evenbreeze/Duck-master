@@ -19,6 +19,28 @@ PROTO_CSV="${3:-vless}"
 MASTER="${MASTER%/}"
 DUCK_PORT_RANDOM="${DUCK_PORT_RANDOM:-1}"
 
+ensure_node_deps() {
+  export DEBIAN_FRONTEND=noninteractive
+  if command -v apt-get >/dev/null 2>&1; then
+    apt-get update -qq
+    apt-get install -y -qq ca-certificates curl jq python3 python3-pip unzip >/dev/null
+  elif ! command -v curl >/dev/null || ! command -v jq >/dev/null; then
+    echo "请先安装: ca-certificates curl jq（Debian/Ubuntu: apt-get install -y ca-certificates curl jq）" >&2
+    exit 1
+  fi
+}
+
+ensure_node_deps
+
+# 主控 HTTPS 链不完整时可：sudo env DUCK_INSECURE_MASTER_SSL=1 ...（仅应急）
+_master_curl() {
+  if [[ "${DUCK_INSECURE_MASTER_SSL:-}" == "1" ]]; then
+    curl -k -fsS "$@"
+  else
+    curl -fsS "$@"
+  fi
+}
+
 pick_port() {
   local env_name="$1"
   local default_port="$2"
@@ -88,7 +110,7 @@ PROTO_JSON+="]"
 echo "[duck-node] 协议: ${PROTO_CSV}  端口: ${PORTS_JSON}"
 echo "[duck-node] 注册到主控 ${MASTER} ..."
 
-REG="$(curl -fsS -X POST "${MASTER}/api/node/register" \
+REG="$(_master_curl -X POST "${MASTER}/api/node/register" \
   -H "Content-Type: application/json" \
   -d "{
     \"token\":\"${TOKEN}\",
@@ -109,12 +131,6 @@ NODE_NAME="$(echo "$REG" | jq -r '.name')"
   exit 1
 }
 
-export DEBIAN_FRONTEND=noninteractive
-if command -v apt-get >/dev/null 2>&1; then
-  apt-get update -qq
-  apt-get install -y -qq curl jq python3 python3-pip unzip >/dev/null
-fi
-
 XRAY_VER="v25.8.3"
 if ! command -v xray >/dev/null; then
   case "$(uname -m)" in
@@ -133,7 +149,7 @@ if ! command -v xray >/dev/null; then
 fi
 
 install -d /opt/duck-node /var/lib/duck-node /etc/duck-node
-curl -fsSL "${MASTER}/api/node/agent.py" -o /opt/duck-node/agent.py
+_master_curl -fsSL "${MASTER}/api/node/agent.py" -o /opt/duck-node/agent.py
 python3 -m pip install -q fastapi "uvicorn[standard]" 2>/dev/null || true
 
 cat >/etc/duck-node/env <<EOF

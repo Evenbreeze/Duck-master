@@ -8,7 +8,7 @@
 #   duck status | restart | logs | cli ...
 set -Eeuo pipefail
 
-DUCK_DEPLOY_SCRIPT_REV="2026-11-07"
+DUCK_DEPLOY_SCRIPT_REV="2026-11-08"
 DUCK_DIR="/opt/duck"
 DATA_DIR="/var/lib/duck"
 CERT_DIR="${DATA_DIR}/certs"
@@ -87,7 +87,11 @@ cmd_acme_cert() {
   local src="${HOME}/.acme.sh/${domain}_ecc"
   [[ -d "$src" ]] || src="${HOME}/.acme.sh/${domain}"
   install -d "$CERT_DIR"
-  cp "${src}/${domain}.cer" "${CERT_DIR}/${domain}.cer"
+  if [[ -f "${src}/fullchain.cer" ]]; then
+    cp "${src}/fullchain.cer" "${CERT_DIR}/${domain}.cer"
+  else
+    cp "${src}/${domain}.cer" "${CERT_DIR}/${domain}.cer"
+  fi
   cp "${src}/${domain}.key" "${CERT_DIR}/${domain}.cer.key"
   chmod 644 "${CERT_DIR}/${domain}.cer" "${CERT_DIR}/${domain}.cer.key"
   if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx duck-panel; then
@@ -235,9 +239,12 @@ issue_cert() {
   duck_resolve_paths
   duck_install_opt_deploy_files "${DEPLOY_DIR}"
   if [[ -s "${CERT_DIR}/${DOMAIN}.cer" && -s "${CERT_DIR}/${DOMAIN}.cer.key" ]]; then
-    green "[3/6] 证书已存在，跳过"
-    "${HOME}/.acme.sh/acme.sh" --install-cert -d "$DOMAIN" \
-      --reloadcmd "$(acme_reloadcmd)" 2>/dev/null || true
+    green "[3/6] 证书已存在，刷新 fullchain 到 ${CERT_DIR}"
+    duck_refresh_panel_tls "$DOMAIN"
+    cmd_acme_cert "$DOMAIN"
+    if ! duck_verify_tls_material "$DOMAIN" "$CERT_DIR"; then
+      yellow "证书链可能不完整，节点安装会失败；尝试: acme.sh --install-cert + duck acme-cert ${DOMAIN}"
+    fi
     return 0
   fi
   echo "[3/6] 申请证书..."
@@ -245,8 +252,15 @@ issue_cert() {
     red "80 端口被占用"; exit 1
   fi
   "${HOME}/.acme.sh/acme.sh" --issue -d "$DOMAIN" --standalone --httpport 80 --force
-  "${HOME}/.acme.sh/acme.sh" --install-cert -d "$DOMAIN" --reloadcmd "$(acme_reloadcmd)"
-  bash /opt/duck/deploy/duck.sh acme-cert "$DOMAIN"
+  "${HOME}/.acme.sh/acme.sh" --install-cert -d "$DOMAIN" \
+    --key-file "${CERT_DIR}/${DOMAIN}.cer.key" \
+    --fullchain-file "${CERT_DIR}/${DOMAIN}.cer" \
+    --reloadcmd "$(acme_reloadcmd)"
+  cmd_acme_cert "$DOMAIN"
+  if ! duck_verify_tls_material "$DOMAIN" "$CERT_DIR"; then
+    red "新证书未含完整链，请检查 acme.sh fullchain"
+    exit 1
+  fi
 }
 
 write_config() {
@@ -311,6 +325,11 @@ start_panel() {
   docker compose -f "${DUCK_DIR}/docker-compose.yml" up -d --force-recreate panel
   wait_for_panel_port
   green "面板已在 8000 监听"
+  if duck_verify_panel_https "$DOMAIN" 8000; then
+    green "HTTPS 校验通过（节点可 curl bootstrap）"
+  else
+    yellow "HTTPS 外网校验未过：请 duck acme-cert ${DOMAIN} && duck restart"
+  fi
 }
 
 create_admin() {
@@ -420,12 +439,24 @@ cmd_fix() {
 cmd_upgrade() {
   need_root
   green "=== Duck 升级 (${DUCK_GITHUB_REPO}) ==="
-  local repo
+  local repo domain
   repo="$(duck_ensure_github_clone "${DUCK_REPO_DIR:-}")"
   duck_pull_latest "$repo"
   duck_install_opt_deploy_files "${repo}/deploy"
   export DUCK_SRC="$repo"
+  domain="$(duck_domain_from_env /opt/duck/.env 2>/dev/null || true)"
+  if [[ -n "$domain" ]]; then
+    install_step "刷新 TLS fullchain（节点安装依赖）"
+    duck_refresh_panel_tls "$domain"
+    cmd_acme_cert "$domain" || true
+    duck_verify_tls_material "$domain" || yellow "证书链异常: sudo duck acme-cert ${domain}"
+  fi
   bash "${repo}/deploy/duck.sh" fix
+  if [[ -n "$domain" ]] && duck_verify_panel_https "$domain" 8000; then
+    green "节点安装 URL 校验 OK: https://${domain}:8000/api/node/bootstrap.sh"
+  elif [[ -n "$domain" ]]; then
+    yellow "节点仍可能 SSL 失败，请在主控执行: sudo duck acme-cert ${domain} && sudo duck restart"
+  fi
 }
 
 case "${1:-}" in

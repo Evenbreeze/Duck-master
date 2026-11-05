@@ -18,7 +18,10 @@ required=(
   app/templates/singbox/settings.json
   deploy/duck.sh
   deploy/duck-lib.sh
+  deploy/duck-node-bootstrap.sh
+  deploy/panel-boot-smoke.py
   deploy/env.template
+  node_agent/agent.py
   deploy/xray_config.template.json
   Dockerfile
   docker-entrypoint.sh
@@ -44,6 +47,22 @@ if grep -q 'from app.xray.node import NodeAPIError' "$ROOT/app/xray/duck_node_cl
 fi
 if grep -E 'RUN .*panel-boot-smoke\.py' "$ROOT/Dockerfile"; then
   echo "Dockerfile 不得在镜像 RUN 里执行 panel-boot-smoke（见 ci.yml 单独步骤）" >&2
+  exit 1
+fi
+if ! grep -q 'ensure_node_deps' "$ROOT/deploy/duck-node-bootstrap.sh"; then
+  echo "duck-node-bootstrap.sh 须在 register 前 ensure_node_deps" >&2
+  exit 1
+fi
+if ! grep -q 'fullchain.cer' "$ROOT/deploy/duck.sh"; then
+  echo "duck.sh 须部署 acme fullchain" >&2
+  exit 1
+fi
+if grep -q 'return "charts"' "$ROOT/app/dashboard/vite.config.ts" 2>/dev/null; then
+  echo "vite 勿单独拆 charts 分块（ApexCharts 循环依赖白屏）" >&2
+  exit 1
+fi
+if ! grep -q 'bash -c' "$ROOT/app/routers/node_enroll.py"; then
+  echo "node_enroll 安装命令须含 apt ca-certificates + bash -c" >&2
   exit 1
 fi
 

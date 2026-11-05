@@ -245,6 +245,89 @@ duck_resolve_proxy_ports() {
   duck_log_proxy_ports
 }
 
+duck_domain_from_env() {
+  local env_file="${1:-/opt/duck/.env}"
+  [[ -f "$env_file" ]] || return 1
+  local raw
+  raw="$(grep -E '^XRAY_SUBSCRIPTION_URL_PREFIX' "$env_file" 2>/dev/null | sed -n '1p' | cut -d= -f2- | tr -d ' "')"
+  raw="${raw#https://}"
+  raw="${raw#http://}"
+  raw="${raw%%/*}"
+  raw="${raw%%:*}"
+  [[ -n "$raw" ]] || return 1
+  echo "$raw"
+}
+
+duck_ssl_ca_type_from_env() {
+  local env_file="${1:-/opt/duck/.env}"
+  [[ -f "$env_file" ]] || { echo public; return 0; }
+  local t
+  t="$(grep -E '^UVICORN_SSL_CA_TYPE' "$env_file" 2>/dev/null | sed -n '1p' | cut -d= -f2- | tr -d ' "' | tr '[:upper:]' '[:lower:]')"
+  [[ -n "$t" ]] || t=public
+  echo "$t"
+}
+
+duck_tls_pem_blocks() {
+  local cert="$1"
+  [[ -f "$cert" ]] || { echo 0; return 0; }
+  grep -c 'BEGIN CERTIFICATE' "$cert" 2>/dev/null || echo 0
+}
+
+# 节点 curl 需要完整链；仅 leaf 时会 SSL 60（自签 CA 除外）
+duck_verify_tls_material() {
+  local domain="$1"
+  local cert_dir="${2:-/var/lib/duck/certs}"
+  local env_file="${3:-/opt/duck/.env}"
+  local cert="${cert_dir}/${domain}.cer" key="${cert_dir}/${domain}.cer.key"
+  [[ -s "$cert" && -s "$key" ]] || {
+    echo "缺少证书: ${cert}" >&2
+    return 1
+  }
+  if [[ "$(duck_ssl_ca_type_from_env "$env_file")" == "private" ]]; then
+    return 0
+  fi
+  local blocks
+  blocks="$(duck_tls_pem_blocks "$cert")"
+  if [[ "${blocks:-0}" -lt 2 ]]; then
+    echo "证书 ${cert} 仅 ${blocks} 段 PEM（需 fullchain，否则节点安装 curl 60）" >&2
+    return 1
+  fi
+  return 0
+}
+
+duck_verify_panel_https() {
+  local domain="$1"
+  local port="${2:-8000}"
+  local url="https://${domain}:${port}/api/node/bootstrap.sh"
+  if curl -fsSI --max-time 20 "$url" >/dev/null 2>&1; then
+    return 0
+  fi
+  # 主控本机常无法通过公网域名访问自己（NAT 回环）；用 --resolve 测本机证书
+  if curl -fsSI --max-time 15 \
+    --resolve "${domain}:${port}:127.0.0.1" \
+    "$url" >/dev/null 2>&1; then
+    echo "提示: 本机公网域名不可达（NAT），外网节点 curl 通常正常" >&2
+    return 0
+  fi
+  echo "HTTPS 校验失败: ${url}（节点无法下载 bootstrap）" >&2
+  return 1
+}
+
+duck_refresh_panel_tls() {
+  local domain="$1"
+  [[ -n "$domain" ]] || return 0
+  if [[ -x "${HOME}/.acme.sh/acme.sh" ]]; then
+    export PATH="${HOME}/.acme.sh:${PATH}"
+    "${HOME}/.acme.sh/acme.sh" --install-cert -d "$domain" \
+      --key-file "/var/lib/duck/certs/${domain}.cer.key" \
+      --fullchain-file "/var/lib/duck/certs/${domain}.cer" \
+      --reloadcmd "bash /opt/duck/deploy/duck.sh acme-cert ${domain}" 2>/dev/null || true
+  fi
+  if [[ -f /opt/duck/deploy/duck.sh ]]; then
+    bash /opt/duck/deploy/duck.sh acme-cert "$domain" 2>/dev/null || true
+  fi
+}
+
 duck_preflight() {
   local script_dir="$1"
   local ROOT DEPLOY
@@ -274,7 +357,9 @@ duck_preflight() {
 
   [[ -f "${DEPLOY}/duck.sh" ]] || fail "找不到 deploy/duck.sh"
   [[ -f "${ROOT}/Dockerfile" ]] || fail "找不到 Dockerfile（可设 DUCK_SRC=）"
-  check_grep "${DEPLOY}/duck.sh" '2026-11-0'
+  check_grep "${DEPLOY}/duck.sh" 'DUCK_DEPLOY_SCRIPT_REV'
+  check_grep "${DEPLOY}/duck.sh" 'fullchain.cer'
+  check_grep "${DEPLOY}/duck-node-bootstrap.sh" 'ensure_node_deps'
   check_grep "${ROOT}/requirements.txt" 'APScheduler==3.10'
   check_grep "${ROOT}/Dockerfile" "VITE_BASE_API=/api/"
   check_grep "${ROOT}/Dockerfile" "import apscheduler; print('Duck image deps OK')"
