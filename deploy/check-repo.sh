@@ -12,7 +12,9 @@ required=(
   app/subscription/v2ray.py
   app/subscription/share.py
   app/templates/clash/default.yml
+  app/templates/clash/settings.yml
   app/templates/singbox/default.json
+  app/templates/singbox/settings.json
   deploy/duck.sh
   deploy/duck-lib.sh
   deploy/env.template
