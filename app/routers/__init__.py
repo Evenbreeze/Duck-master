@@ -16,8 +16,8 @@ api_router = APIRouter()
 routers = [
     admin.router,
     core.router,
+    node_enroll.router,  # 须在 node 前：/node/bootstrap.sh 勿被 /node/{node_id} 吃掉
     node.router,
-    node_enroll.router,
     subscription.router,
     system.router,
     user.router,
