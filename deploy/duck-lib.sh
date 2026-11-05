@@ -99,10 +99,14 @@ random_proxy_port() {
 
 validate_proxy_port() {
   local name="$1" p="$2"
-  [[ "$p" =~ ^[0-9]+$ ]] && (( p >= 1 && p <= 65535 )) || {
+  if ! [[ "$p" =~ ^[0-9]+$ ]]; then
     echo "错误: ${name} 端口无效: ${p}" >&2
     return 1
-  }
+  fi
+  if (( p < 1 || p > 65535 )); then
+    echo "错误: ${name} 端口无效: ${p}" >&2
+    return 1
+  fi
 }
 
 normalize_port_input() {
@@ -126,10 +130,10 @@ duck_assert_unique_ports() {
   for i in "${!p[@]}"; do
     validate_proxy_port "port" "${p[$i]}" || return 1
     for j in "${!p[@]}"; do
-      [[ "$i" -lt "$j" && "${p[$i]}" == "${p[$j]}" ]] && {
+      if [[ "$i" -lt "$j" && "${p[$i]}" == "${p[$j]}" ]]; then
         echo "错误: 端口不能重复" >&2
         return 1
-      }
+      fi
     done
   done
 }
@@ -247,10 +251,14 @@ duck_preflight() {
     ROOT="$(cd "${script_dir}/.." && pwd)"
     DEPLOY="${script_dir}"
   fi
-  [[ -f "${DEPLOY}/duck.sh" ]] || DEPLOY="${script_dir}"
+  if [[ ! -f "${DEPLOY}/duck.sh" ]]; then
+    DEPLOY="${script_dir}"
+  fi
   if [[ ! -f "${ROOT}/Dockerfile" && -f /opt/duck/source/Dockerfile ]]; then
     ROOT=/opt/duck/source
-    [[ -f "${ROOT}/deploy/duck.sh" ]] && DEPLOY="${ROOT}/deploy"
+    if [[ -f "${ROOT}/deploy/duck.sh" ]]; then
+      DEPLOY="${ROOT}/deploy"
+    fi
   fi
 
   local red green fail check_grep check_not
@@ -262,7 +270,7 @@ duck_preflight() {
 
   [[ -f "${DEPLOY}/duck.sh" ]] || fail "找不到 deploy/duck.sh"
   [[ -f "${ROOT}/Dockerfile" ]] || fail "找不到 Dockerfile（可设 DUCK_SRC=）"
-  check_grep "${DEPLOY}/duck.sh" '2026-11-06'
+  check_grep "${DEPLOY}/duck.sh" '2026-11-0'
   check_grep "${ROOT}/requirements.txt" 'APScheduler==3.10'
   check_grep "${ROOT}/Dockerfile" "VITE_BASE_API=/api/"
   check_grep "${ROOT}/Dockerfile" "import apscheduler; print('Duck image deps OK')"

@@ -8,7 +8,8 @@
 
 ```bash
 git clone https://github.com/Evenbreeze/Duck-master.git /root/Duck-master
-sudo bash /root/Duck-master/deploy/duck.sh install
+sudo env DOMAIN='你的域名' EMAIL='你的邮箱' ADMIN_USER='admin' ADMIN_PASSWORD='你的密码' \
+  DUCK_SKIP_DNS_CHECK=1 bash /root/Duck-master/deploy/duck.sh install
 ```
 
 日常更新：`sudo duck upgrade`（或 `sudo bash /root/Duck-master/deploy/duck.sh upgrade`）

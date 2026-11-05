@@ -6,9 +6,9 @@
 #   sudo duck upgrade          # 日常：GitHub 拉代码 + 重建（推荐）
 #   sudo bash duck.sh fix      # 不拉 git，只用本地目录
 #   duck status | restart | logs | cli ...
-set -euo pipefail
+set -Eeuo pipefail
 
-DUCK_DEPLOY_SCRIPT_REV="2026-11-06"
+DUCK_DEPLOY_SCRIPT_REV="2026-11-07"
 DUCK_DIR="/opt/duck"
 DATA_DIR="/var/lib/duck"
 CERT_DIR="${DATA_DIR}/certs"
@@ -24,6 +24,16 @@ green() { echo -e "\033[32m$*\033[0m"; }
 yellow() { echo -e "\033[33m$*\033[0m"; }
 
 dc() { docker compose -f "$COMPOSE_FILE" "$@"; }
+
+duck_install_err() {
+  local ec=${2:-1} line=${1:-?}
+  red "安装失败 (exit ${ec}, 约第 ${line} 行): ${BASH_COMMAND}"
+  exit "$ec"
+}
+
+install_step() {
+  echo "[install] $*"
+}
 
 need_root() {
   [[ "$(id -u)" -eq 0 ]] || { red "请 sudo 运行"; exit 1; }
@@ -45,7 +55,9 @@ duck_resolve_paths() {
   DUCK_SRC="${DUCK_SRC:-$(duck_pick_repo_root "${SCRIPT_DIR}" 2>/dev/null || true)}"
   DUCK_SRC="${DUCK_SRC:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
   DEPLOY_DIR="${DUCK_SRC}/deploy"
-  [[ -f "${DEPLOY_DIR}/duck.sh" ]] || DEPLOY_DIR="${SCRIPT_DIR}"
+  if [[ ! -f "${DEPLOY_DIR}/duck.sh" ]]; then
+    DEPLOY_DIR="${SCRIPT_DIR}"
+  fi
 }
 
 cmd_preflight() {
@@ -104,7 +116,10 @@ validate_domain() {
   sip="$(public_ip)"
   dip="$(domain_ip "$DOMAIN" || true)"
   if [[ -n "$sip" && -n "$dip" && "$sip" != "$dip" ]]; then
-    [[ "${DUCK_SKIP_DNS_CHECK:-}" == "1" ]] && yellow "DNS 警告已跳过" && return 0
+    if [[ "${DUCK_SKIP_DNS_CHECK:-}" == "1" ]]; then
+      yellow "DNS 警告已跳过"
+      return 0
+    fi
     confirm_or_exit "域名 ${DOMAIN} -> ${dip}，本机 ${sip}"
   fi
 }
@@ -114,7 +129,9 @@ prompt_vars() {
     green "=== Duck 主控安装 ==="
     read -rp "面板域名: " DOMAIN
   fi
-  [[ -z "${EMAIL:-}" ]] && read -rp "Let's Encrypt 邮箱: " EMAIL
+  if [[ -z "${EMAIL:-}" ]]; then
+    read -rp "Let's Encrypt 邮箱: " EMAIL
+  fi
   if [[ -z "${ADMIN_USER:-}" ]]; then
     read -rp "管理员用户名 [admin]: " ADMIN_USER
     ADMIN_USER="${ADMIN_USER:-admin}"
@@ -129,20 +146,37 @@ prompt_vars() {
     port_interactive=0
     export DUCK_NONINTERACTIVE=1
   fi
-  duck_resolve_proxy_ports "$port_interactive" || exit 1
+  if ! duck_resolve_proxy_ports "$port_interactive"; then
+    red "代理端口配置失败"
+    exit 1
+  fi
 }
 
 install_docker() {
-  command -v docker >/dev/null 2>&1 && return
+  if command -v docker >/dev/null 2>&1; then
+    return 0
+  fi
   curl -fsSL https://get.docker.com | sh
   systemctl enable --now docker 2>/dev/null || true
 }
 
 ensure_host_deps() {
+  if ! command -v apt-get >/dev/null 2>&1; then
+    red "主控 install 目前仅支持 Debian/Ubuntu（需 apt-get）"
+    exit 1
+  fi
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
-  apt-get install -y -qq git curl ca-certificates python3
+  apt-get install -y -qq git curl ca-certificates python3 dnsutils rsync
   install_docker
+  if ! command -v docker >/dev/null 2>&1; then
+    red "Docker 未安装成功，请检查 get.docker.com 输出后重试"
+    exit 1
+  fi
+  if ! docker compose version >/dev/null 2>&1; then
+    red "缺少 docker compose 插件，请重装 Docker 后重试"
+    exit 1
+  fi
 }
 
 ensure_duck_dirs() { install -d "$DUCK_DIR" "$DATA_DIR" "$CERT_DIR"; }
@@ -160,16 +194,19 @@ build_duck_image() {
   echo "[5/6] 构建镜像（首次较慢）..."
   install_docker
   sync_duck_source
-  grep -q 'import pkg_resources' /opt/duck/source/Dockerfile 2>/dev/null && {
+  if grep -q 'import pkg_resources' /opt/duck/source/Dockerfile 2>/dev/null; then
     red "Dockerfile 过旧，请 Push 后 git pull"; exit 1
-  }
+  fi
   docker compose -f "${DUCK_DIR}/docker-compose.yml" build --no-cache panel
   docker run --rm --entrypoint python duck-panel:latest -c "import apscheduler; print('OK')"
 }
 
 install_acme() {
-  [[ -x "${HOME}/.acme.sh/acme.sh" ]] || curl -s https://get.acme.sh | sh -s "email=${EMAIL}"
+  if [[ ! -x "${HOME}/.acme.sh/acme.sh" ]]; then
+    curl -fsSL https://get.acme.sh | sh -s "email=${EMAIL}"
+  fi
   export PATH="${HOME}/.acme.sh:${PATH}"
+  [[ -x "${HOME}/.acme.sh/acme.sh" ]] || { red "acme.sh 安装失败"; exit 1; }
 }
 
 acme_reloadcmd() {
@@ -187,7 +224,9 @@ issue_cert() {
     return 0
   fi
   echo "[3/6] 申请证书..."
-  ss -tlnp 2>/dev/null | grep -q ':80 ' && { red "80 端口被占用"; exit 1; }
+  if ss -tlnp 2>/dev/null | grep -q ':80 '; then
+    red "80 端口被占用"; exit 1
+  fi
   "${HOME}/.acme.sh/acme.sh" --issue -d "$DOMAIN" --standalone --httpport 80 --force
   "${HOME}/.acme.sh/acme.sh" --install-cert -d "$DOMAIN" --reloadcmd "$(acme_reloadcmd)"
   bash /opt/duck/deploy/duck.sh acme-cert "$DOMAIN"
@@ -209,15 +248,23 @@ write_config() {
     | sed "s|__PORT_TROJAN__|${DUCK_PORT_TROJAN}|g" \
     | sed "s|__PORT_SS__|${DUCK_PORT_SS}|g" \
     > "${DATA_DIR}/xray_config.json"
-  duck_apply_proxy_ports "${DATA_DIR}/xray_config.json" "${DATA_DIR}/duck-ports.env"
+  if ! duck_apply_proxy_ports "${DATA_DIR}/xray_config.json" "${DATA_DIR}/duck-ports.env"; then
+    red "写入代理端口失败"
+    exit 1
+  fi
 }
 
 wait_for_panel_port() {
   local i st
   for i in $(seq 1 40); do
     st="$(docker inspect -f '{{.State.Status}}' duck-panel 2>/dev/null || true)"
-    [[ "$st" == "exited" || "$st" == "dead" ]] && { docker logs duck-panel --tail 40; exit 1; }
-    [[ "$st" == "running" ]] && ss -tlnp 2>/dev/null | grep -q ':8000 ' && return 0
+    if [[ "$st" == "exited" || "$st" == "dead" ]]; then
+      docker logs duck-panel --tail 40
+      exit 1
+    fi
+    if [[ "$st" == "running" ]] && ss -tlnp 2>/dev/null | grep -q ':8000 '; then
+      return 0
+    fi
     sleep 3
   done
   docker logs duck-panel --tail 50
@@ -234,32 +281,48 @@ start_panel() {
 create_admin() {
   local c
   c="$(docker ps --format '{{.Names}}' | grep -x duck-panel || true)"
-  [[ -n "$c" ]] || return 0
-  docker exec "$c" duck-cli admin list 2>/dev/null | grep -qw "${ADMIN_USER}" && return 0
+  if [[ -z "$c" ]]; then
+    yellow "未找到 duck-panel 容器，跳过创建管理员"
+    return 0
+  fi
+  if docker exec "$c" duck-cli admin list 2>/dev/null | grep -qw "${ADMIN_USER}"; then
+    return 0
+  fi
   docker exec -e DUCK_ADMIN_PASSWORD="${ADMIN_PASSWORD}" "$c" \
     duck-cli admin create --username "${ADMIN_USER}" --sudo --telegram-id 0 --discord-webhook "" \
     2>/dev/null || yellow "请手动: duck cli admin create --sudo"
 }
 
 prepare_fresh_install() {
-  [[ "${DUCK_FRESH_INSTALL:-}" == "1" ]] || return 0
+  if [[ "${DUCK_FRESH_INSTALL:-}" != "1" ]]; then
+    return 0
+  fi
   docker rm -f duck-panel 2>/dev/null || true
   docker compose -f "${DUCK_DIR}/docker-compose.yml" down 2>/dev/null || true
 }
 
 cmd_install() {
+  trap 'duck_install_err ${LINENO} $?' ERR
+  trap 'trap - ERR' RETURN
   green "=== Duck 安装 (${DUCK_DEPLOY_SCRIPT_REV}) ==="
   need_root
+  install_step "1/6 系统依赖与 Docker"
   ensure_host_deps
+  install_step "检查 deploy 与源码"
   duck_preflight "${SCRIPT_DIR}"
   prepare_fresh_install
+  install_step "2/6 安装参数与代理端口"
   prompt_vars
   validate_domain
+  install_step "3/6 acme.sh"
   install_acme
   issue_cert
+  install_step "4/6 写入配置"
   write_config
   ensure_duck_dirs
+  install_step "5/6 构建镜像"
   build_duck_image
+  install_step "6/6 启动面板"
   start_panel
   create_admin
   green "
@@ -277,15 +340,20 @@ cmd_reinstall() {
   done
   if [[ -d "${repo_root}/.git" ]]; then
     git -C "${repo_root}" fetch origin
-    git -C "${repo_root}" show-ref -q refs/remotes/origin/main && \
-      git -C "${repo_root}" reset --hard origin/main || \
-      git -C "${repo_root}" reset --hard origin/master 2>/dev/null || \
+    if git -C "${repo_root}" show-ref -q refs/remotes/origin/main; then
+      git -C "${repo_root}" reset --hard origin/main
+    elif git -C "${repo_root}" show-ref -q refs/remotes/origin/master; then
+      git -C "${repo_root}" reset --hard origin/master
+    else
       git -C "${repo_root}" reset --hard FETCH_HEAD
+    fi
   fi
   DUCK_SRC="${repo_root}" duck_preflight "${SCRIPT_DIR}"
   docker rm -f duck-panel 2>/dev/null || true
   docker compose -f /opt/duck/docker-compose.yml down 2>/dev/null || true
-  [[ "${DUCK_WIPE_DATA:-0}" == "1" ]] && rm -rf /var/lib/duck/*
+  if [[ "${DUCK_WIPE_DATA:-0}" == "1" ]]; then
+    rm -rf /var/lib/duck/*
+  fi
   DUCK_SRC="${repo_root}" DUCK_FRESH_INSTALL=1 \
     DOMAIN="$DOMAIN" EMAIL="$EMAIL" ADMIN_USER="$ADMIN_USER" ADMIN_PASSWORD="$ADMIN_PASSWORD" \
     ${DUCK_SKIP_DNS_CHECK:+DUCK_SKIP_DNS_CHECK=$DUCK_SKIP_DNS_CHECK} \
@@ -303,8 +371,11 @@ cmd_fix() {
   docker run --rm --entrypoint python duck-panel:latest -c "import apscheduler; print('OK')"
   docker compose -f "$COMPOSE_FILE" up -d --force-recreate panel
   for _ in $(seq 1 36); do
-    docker inspect -f '{{.State.Status}}' duck-panel 2>/dev/null | grep -qx running \
-      && ss -tlnp | grep -q ':8000 ' && { green "面板已就绪"; exit 0; }
+    if docker inspect -f '{{.State.Status}}' duck-panel 2>/dev/null | grep -qx running \
+      && ss -tlnp | grep -q ':8000 '; then
+      green "面板已就绪"
+      exit 0
+    fi
     sleep 5
   done
   docker logs duck-panel --tail 40

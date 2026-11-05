@@ -38,7 +38,8 @@ pick_port() {
   echo "$val"
 }
 
-NODE_IP="$(curl -fsS -4 --max-time 10 https://ifconfig.me/ip 2>/dev/null || curl -fsS -4 --max-time 10 https://api.ip.sb/ip)"
+NODE_IP="$(curl -fsS -4 --max-time 10 https://ifconfig.me/ip 2>/dev/null || curl -fsS -4 --max-time 10 https://api.ip.sb/ip || true)"
+[[ -n "$NODE_IP" ]] || { echo "无法获取本机公网 IP" >&2; exit 1; }
 
 declare -A PORTS=()
 IFS=',' read -ra PROTOS <<< "$PROTO_CSV"
@@ -109,7 +110,10 @@ NODE_NAME="$(echo "$REG" | jq -r '.name')"
 }
 
 export DEBIAN_FRONTEND=noninteractive
-command -v apt-get >/dev/null && apt-get update -qq && apt-get install -y -qq curl jq python3 python3-pip unzip >/dev/null
+if command -v apt-get >/dev/null 2>&1; then
+  apt-get update -qq
+  apt-get install -y -qq curl jq python3 python3-pip unzip >/dev/null
+fi
 
 XRAY_VER="v25.8.3"
 if ! command -v xray >/dev/null; then
