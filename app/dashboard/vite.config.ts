@@ -1,5 +1,5 @@
 import react from "@vitejs/plugin-react";
-import { defineConfig, splitVendorChunkPlugin } from "vite";
+import { defineConfig } from "vite";
 import svgr from "vite-plugin-svgr";
 import { visualizer } from "rollup-plugin-visualizer";
 import tsconfigPaths from "vite-tsconfig-paths";
@@ -18,9 +18,6 @@ export default defineConfig({
             id.includes("framer-motion")
           ) {
             return "chakra";
-          }
-          if (id.includes("apexcharts") || id.includes("react-apexcharts")) {
-            return "charts";
           }
           if (
             id.includes("jsoneditor") ||
@@ -45,6 +42,5 @@ export default defineConfig({
     react({ include: "**/*.tsx" }),
     svgr(),
     visualizer({ filename: "build/stats.html", gzipSize: true }),
-    splitVendorChunkPlugin(),
   ],
 });
