@@ -1,4 +1,3 @@
-from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -17,17 +16,6 @@ from xray_api.types.account import Account, XTLSFlows
 if TYPE_CHECKING:
     from app.db import User as DBUser
     from app.db.models import Node as DBNode
-
-
-@lru_cache(maxsize=None)
-def get_tls():
-    from app.db import GetDB, get_tls_certificate
-    with GetDB() as db:
-        tls = get_tls_certificate(db)
-        return {
-            "key": tls.key,
-            "certificate": tls.certificate
-        }
 
 
 @threaded_function
@@ -190,15 +178,18 @@ def remove_node(node_id: int):
 
 def add_node(dbnode: "DBNode"):
     remove_node(dbnode.id)
-
-    tls = get_tls()
-    xray.nodes[dbnode.id] = XRayNode(address=dbnode.address,
-                                     port=dbnode.port,
-                                     api_port=dbnode.api_port,
-                                     ssl_key=tls['key'],
-                                     ssl_cert=tls['certificate'],
-                                     usage_coefficient=dbnode.usage_coefficient)
-
+    secret = getattr(dbnode, "api_secret", None)
+    if not secret:
+        raise ConnectionError(
+            f'节点 "{dbnode.name}" 未通过一键安装注册（缺少 api_secret），请删除后重新生成安装命令'
+        )
+    xray.nodes[dbnode.id] = XRayNode(
+        address=dbnode.address,
+        port=dbnode.port,
+        api_port=dbnode.api_port,
+        api_secret=secret,
+        usage_coefficient=dbnode.usage_coefficient,
+    )
     return xray.nodes[dbnode.id]
 
 

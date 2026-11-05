@@ -63,13 +63,22 @@ export const FetchNodesQueryKey = "fetch-nodes-query-key";
 
 export type NodeStore = {
   nodes: NodeType[];
-  addNode: (node: NodeType) => Promise<unknown>;
+  enrollNode: (
+    name: string,
+    protocols: ("vless" | "vmess" | "trojan" | "ss")[]
+  ) => Promise<{
+    install_command: string;
+    node_id: number;
+    protocols: string[];
+    proxy_ports: Record<string, number>;
+    service_port: number;
+    api_port: number;
+  }>;
   fetchNodes: () => Promise<NodeType[]>;
   fetchNodesUsage: (query: FilterUsageType) => Promise<void>;
   updateNode: (node: NodeType) => Promise<unknown>;
   reconnectNode: (node: NodeType) => Promise<unknown>;
   regenerateProxyPorts: (nodeId: number) => Promise<unknown>;
-  migrateDuckInbounds: () => Promise<{ upgraded: number; skipped: number }>;
   deletingNode?: NodeType | null;
   deleteNode: () => Promise<unknown>;
   setDeletingNode: (node: NodeType | null) => void;
@@ -87,8 +96,8 @@ export const useNodesQuery = () => {
 
 export const useNodes = create<NodeStore>((set, get) => ({
   nodes: [],
-  addNode(body) {
-    return fetch("/node", { method: "POST", body });
+  enrollNode(name, protocols) {
+    return fetch("/node/enroll", { method: "POST", body: { name, protocols } });
   },
   fetchNodes() {
     return fetch("/nodes");
@@ -106,9 +115,6 @@ export const useNodes = create<NodeStore>((set, get) => ({
     return fetch(`/node/${nodeId}/regenerate-proxy-ports`, {
       method: "POST",
     });
-  },
-  migrateDuckInbounds() {
-    return fetch("/nodes/migrate-duck-inbounds", { method: "POST" });
   },
   setDeletingNode(node) {
     set({ deletingNode: node });

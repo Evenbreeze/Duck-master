@@ -57,7 +57,6 @@ def generate_clash_subscription(
         conf = ClashMetaConfiguration()
     else:
         conf = ClashConfiguration()
-
     format_variables = setup_format_variables(extra_data)
     return process_inbounds_and_tags(
         inbounds, proxies, format_variables, conf=conf, reverse=reverse
@@ -68,7 +67,6 @@ def generate_singbox_subscription(
         proxies: dict, inbounds: dict, extra_data: dict, reverse: bool
 ) -> str:
     conf = SingBoxConfiguration()
-
     format_variables = setup_format_variables(extra_data)
     return process_inbounds_and_tags(
         inbounds, proxies, format_variables, conf=conf, reverse=reverse
@@ -79,7 +77,6 @@ def generate_outline_subscription(
         proxies: dict, inbounds: dict, extra_data: dict, reverse: bool,
 ) -> str:
     conf = OutlineConfiguration()
-
     format_variables = setup_format_variables(extra_data)
     return process_inbounds_and_tags(
         inbounds, proxies, format_variables, conf=conf, reverse=reverse
@@ -90,7 +87,6 @@ def generate_v2ray_json_subscription(
         proxies: dict, inbounds: dict, extra_data: dict, reverse: bool,
 ) -> str:
     conf = V2rayJsonConfig()
-
     format_variables = setup_format_variables(extra_data)
     return process_inbounds_and_tags(
         inbounds, proxies, format_variables, conf=conf, reverse=reverse
@@ -239,7 +235,7 @@ def process_inbounds_and_tags(
             SingBoxConfiguration,
             ClashConfiguration,
             ClashMetaConfiguration,
-            OutlineConfiguration
+            OutlineConfiguration,
         ],
         reverse=False,
 ) -> Union[List, str]:

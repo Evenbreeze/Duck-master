@@ -1,9 +1,6 @@
 import {
-  Alert,
-  AlertIcon,
   Button,
   FormControl,
-  FormHelperText,
   FormLabel,
   Input,
   Modal,
@@ -13,14 +10,20 @@ import {
   ModalFooter,
   ModalHeader,
   ModalOverlay,
+  Textarea,
   useToast,
+  VStack,
 } from "@chakra-ui/react";
 import { useDashboard } from "contexts/DashboardContext";
 import { FC, useEffect, useState } from "react";
 import { fetch } from "service/http";
+import {
+  generateErrorMessage,
+  generateSuccessMessage,
+} from "utils/toastHandler";
 
 type TelegramSettings = {
-  token_configured: boolean;
+  api_token: string;
   admin_ids: number[];
   logger_channel_id: number;
   proxy_url: string;
@@ -30,61 +33,46 @@ export const TelegramSettingsModal: FC = () => {
   const toast = useToast();
   const isOpen = useDashboard((s) => s.isEditingTelegram);
   const onClose = () => useDashboard.setState({ isEditingTelegram: false });
-
-  const [apiToken, setApiToken] = useState("");
-  const [adminIds, setAdminIds] = useState("");
-  const [loggerChannelId, setLoggerChannelId] = useState("");
-  const [proxyUrl, setProxyUrl] = useState("");
-  const [tokenConfigured, setTokenConfigured] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState<TelegramSettings>({
+    api_token: "",
+    admin_ids: [],
+    logger_channel_id: 0,
+    proxy_url: "",
+  });
+  const [adminIdsText, setAdminIdsText] = useState("");
 
   useEffect(() => {
     if (!isOpen) return;
     fetch<TelegramSettings>("/telegram/settings")
       .then((data) => {
-        setTokenConfigured(data.token_configured);
-        setAdminIds(data.admin_ids.join(", "));
-        setLoggerChannelId(
-          data.logger_channel_id ? String(data.logger_channel_id) : ""
-        );
-        setProxyUrl(data.proxy_url || "");
-        setApiToken("");
+        setForm(data);
+        setAdminIdsText((data.admin_ids || []).join(", "));
       })
-      .catch(() => {
-        toast({ title: "加载失败", status: "error" });
-      });
+      .catch((e) => generateErrorMessage(e, toast));
   }, [isOpen, toast]);
 
   const onSave = async () => {
-    const ids = adminIds
-      .split(/[,，\s]+/)
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .map((s) => parseInt(s, 10))
-      .filter((n) => !Number.isNaN(n));
-
     setLoading(true);
     try {
+      const admin_ids = adminIdsText
+        .split(/[,，\s]+/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((s) => parseInt(s, 10))
+        .filter((n) => !Number.isNaN(n));
       await fetch("/telegram/settings", {
         method: "PUT",
-        body: JSON.stringify({
-          api_token: apiToken.trim() || null,
-          admin_ids: ids,
-          logger_channel_id: loggerChannelId
-            ? parseInt(loggerChannelId, 10)
-            : 0,
-          proxy_url: proxyUrl.trim(),
-        }),
+        body: {
+          ...form,
+          admin_ids,
+          logger_channel_id: Number(form.logger_channel_id) || 0,
+        },
       });
-      toast({
-        title: "已保存",
-        description: "保存后请在服务器执行 duck restart 使机器人生效",
-        status: "success",
-        duration: 8000,
-      });
+      generateSuccessMessage("已保存，请 duck restart 使 Bot 生效", toast);
       onClose();
-    } catch {
-      toast({ title: "保存失败", status: "error" });
+    } catch (e) {
+      generateErrorMessage(e, toast);
     } finally {
       setLoading(false);
     }
@@ -93,52 +81,54 @@ export const TelegramSettingsModal: FC = () => {
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="lg">
       <ModalOverlay />
-      <ModalContent>
-        <ModalHeader>{"Telegram 机器人"}</ModalHeader>
+      <ModalContent mx={3}>
+        <ModalHeader>{"Telegram 通知"}</ModalHeader>
         <ModalCloseButton />
         <ModalBody>
-          <Alert status="info" mb={4} fontSize="sm">
-            <AlertIcon />
-            {"保存后请在服务器执行 duck restart 使机器人生效"}
-          </Alert>
-          <FormControl mb={4}>
-            <FormLabel>{"Bot Token"}</FormLabel>
-            <Input
-              type="password"
-              placeholder={
-                tokenConfigured ? "已配置，输入新 Token 可更换" : ""
-              }
-              value={apiToken}
-              onChange={(e) => setApiToken(e.target.value)}
-              autoComplete="off"
-            />
-            <FormHelperText>{"留空表示不修改已保存的 Token"}</FormHelperText>
-          </FormControl>
-          <FormControl mb={4}>
-            <FormLabel>{"管理员 Telegram ID"}</FormLabel>
-            <Input
-              value={adminIds}
-              onChange={(e) => setAdminIds(e.target.value)}
-              placeholder="123456789"
-            />
-            <FormHelperText>{"多个用英文逗号分隔，@userinfobot 可查自己的 ID"}</FormHelperText>
-          </FormControl>
-          <FormControl mb={4}>
-            <FormLabel>{"日志频道 ID"}</FormLabel>
-            <Input
-              value={loggerChannelId}
-              onChange={(e) => setLoggerChannelId(e.target.value)}
-              placeholder={"可选"}
-            />
-          </FormControl>
-          <FormControl mb={2}>
-            <FormLabel>{"代理地址"}</FormLabel>
-            <Input
-              value={proxyUrl}
-              onChange={(e) => setProxyUrl(e.target.value)}
-              placeholder={"可选"}
-            />
-          </FormControl>
+          <VStack spacing={4} align="stretch">
+            <FormControl>
+              <FormLabel>{"Bot Token"}</FormLabel>
+              <Input
+                value={form.api_token}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, api_token: e.target.value }))
+                }
+                placeholder="123456:ABC..."
+              />
+            </FormControl>
+            <FormControl>
+              <FormLabel>{"管理员 Telegram ID（逗号分隔）"}</FormLabel>
+              <Textarea
+                value={adminIdsText}
+                onChange={(e) => setAdminIdsText(e.target.value)}
+                rows={2}
+                placeholder="123456789"
+              />
+            </FormControl>
+            <FormControl>
+              <FormLabel>{"日志频道 ID（可选）"}</FormLabel>
+              <Input
+                type="number"
+                value={form.logger_channel_id || ""}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    logger_channel_id: parseInt(e.target.value, 10) || 0,
+                  }))
+                }
+              />
+            </FormControl>
+            <FormControl>
+              <FormLabel>{"代理 URL（可选）"}</FormLabel>
+              <Input
+                value={form.proxy_url}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, proxy_url: e.target.value }))
+                }
+                placeholder="socks5://127.0.0.1:1080"
+              />
+            </FormControl>
+          </VStack>
         </ModalBody>
         <ModalFooter>
           <Button variant="ghost" mr={3} onClick={onClose}>

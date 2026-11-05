@@ -1,10 +1,51 @@
 # shellcheck shell=bash
-# 安装时：四协议端口（全节点相同）。非交互可用 DUCK_PORT_* / DUCK_PORT_RANDOM=1
+# Duck 部署库：源码同步、端口、安装前检查
 
 DUCK_DEFAULT_PORT_VLESS=443
 DUCK_DEFAULT_PORT_VMESS=8080
 DUCK_DEFAULT_PORT_TROJAN=2053
 DUCK_DEFAULT_PORT_SS=1080
+
+duck_pick_repo_root() {
+  local script_dir="$1"
+  [[ -n "${DUCK_SRC:-}" && -f "${DUCK_SRC}/Dockerfile" ]] && { echo "$DUCK_SRC"; return 0; }
+  [[ -f "${script_dir}/../Dockerfile" ]] && { (cd "${script_dir}/.." && pwd); return 0; }
+  [[ -f /root/Duck-master/Dockerfile ]] && { echo /root/Duck-master; return 0; }
+  for d in /home/*/Duck-master; do
+    [[ -f "${d}/Dockerfile" ]] && { echo "$d"; return 0; }
+  done
+  [[ -f /opt/duck/source/Dockerfile ]] && { echo /opt/duck/source; return 0; }
+  return 1
+}
+
+duck_rsync_repo_to_opt_source() {
+  local repo="$1"
+  install -d /opt/duck/source
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -a --delete \
+      --exclude '.git' --exclude 'node_modules' --exclude 'venv' \
+      --exclude 'db.sqlite3' \
+      "${repo}/" /opt/duck/source/
+  else
+    rm -rf /opt/duck/source
+    cp -a "${repo}" /opt/duck/source
+  fi
+}
+
+duck_install_opt_deploy_files() {
+  local d="$1"
+  install -d /opt/duck/deploy /opt/marzban
+  cp "$d/docker-compose.yml" /opt/marzban/docker-compose.yml
+  cp "$d/duck.sh" "$d/duck-lib.sh" "$d/duck-node-bootstrap.sh" \
+    "$d/env.template" "$d/xray_config.template.json" \
+    "$d/docker-compose.yml" /opt/duck/deploy/
+  chmod +x /opt/duck/deploy/*.sh
+  for legacy in install fix-panel reinstall preflight acme-install-cert; do
+    ln -sf /opt/duck/deploy/duck.sh "/opt/duck/deploy/${legacy}.sh"
+  done
+  install -m 755 /opt/duck/deploy/duck.sh /usr/local/bin/duck
+  ln -sf /opt/duck/deploy/duck.sh /usr/local/bin/fix-panel.sh
+}
 
 random_proxy_port() {
   local avoid_csv="${1:-}"
@@ -17,21 +58,14 @@ random_proxy_port() {
     return 0
   done
   echo "24567"
-  return 0
 }
 
 validate_proxy_port() {
-  local name="$1"
-  local p="$2"
-  if [[ ! "$p" =~ ^[0-9]+$ ]]; then
+  local name="$1" p="$2"
+  [[ "$p" =~ ^[0-9]+$ ]] && (( p >= 1 && p <= 65535 )) || {
     echo "错误: ${name} 端口无效: ${p}" >&2
     return 1
-  fi
-  if (( p < 1 || p > 65535 )); then
-    echo "错误: ${name} 端口无效: ${p}" >&2
-    return 1
-  fi
-  return 0
+  }
 }
 
 normalize_port_input() {
@@ -43,7 +77,6 @@ normalize_port_input() {
   fi
   validate_proxy_port "$label" "$raw" || return 1
   echo "$raw"
-  return 0
 }
 
 duck_ports_used_csv() {
@@ -56,13 +89,12 @@ duck_assert_unique_ports() {
   for i in "${!p[@]}"; do
     validate_proxy_port "port" "${p[$i]}" || return 1
     for j in "${!p[@]}"; do
-      if [[ "$i" -lt "$j" && "${p[$i]}" == "${p[$j]}" ]]; then
+      [[ "$i" -lt "$j" && "${p[$i]}" == "${p[$j]}" ]] && {
         echo "错误: 端口不能重复" >&2
         return 1
-      fi
+      }
     done
   done
-  return 0
 }
 
 duck_randomize_all_proxy_ports() {
@@ -72,7 +104,6 @@ duck_randomize_all_proxy_ports() {
   DUCK_PORT_TROJAN="$(random_proxy_port "$used")"; used+=",$DUCK_PORT_TROJAN"
   DUCK_PORT_SS="$(random_proxy_port "$used")"
   export DUCK_PORT_VLESS DUCK_PORT_VMESS DUCK_PORT_TROJAN DUCK_PORT_SS
-  return 0
 }
 
 duck_apply_default_proxy_ports() {
@@ -81,7 +112,6 @@ duck_apply_default_proxy_ports() {
   DUCK_PORT_TROJAN=$DUCK_DEFAULT_PORT_TROJAN
   DUCK_PORT_SS="$(random_proxy_port "${DUCK_DEFAULT_PORT_VLESS},${DUCK_DEFAULT_PORT_VMESS},${DUCK_DEFAULT_PORT_TROJAN}")"
   export DUCK_PORT_VLESS DUCK_PORT_VMESS DUCK_PORT_TROJAN DUCK_PORT_SS
-  return 0
 }
 
 duck_apply_proxy_ports() {
@@ -111,11 +141,10 @@ DUCK_INBOUND_PORT_VLESS=${DUCK_PORT_VLESS}
 DUCK_INBOUND_PORT_VMESS=${DUCK_PORT_VMESS}
 DUCK_INBOUND_PORT_TROJAN=${DUCK_PORT_TROJAN}
 DUCK_INBOUND_PORT_SS=${DUCK_PORT_SS}
-MARZBAN_NODE_PORT=62050
-MARZBAN_NODE_API_PORT=62051
+DUCK_AGENT_PORT=62050
+DUCK_XRAY_API_PORT=62051
 EOF
   chmod 644 "$ports_env"
-  return 0
 }
 
 duck_log_proxy_ports() {
@@ -124,14 +153,12 @@ duck_log_proxy_ports() {
 
 duck_resolve_proxy_ports() {
   local interactive="${1:-1}"
-
   if [[ -n "${DUCK_PORT_RANDOM:-}" && "${DUCK_PORT_RANDOM}" != "0" ]]; then
     duck_randomize_all_proxy_ports
     duck_assert_unique_ports || return 1
     duck_log_proxy_ports
     return 0
   fi
-
   if [[ -n "${DUCK_PORT_VLESS:-}${DUCK_PORT_VMESS:-}${DUCK_PORT_TROJAN:-}${DUCK_PORT_SS:-}" ]]; then
     : "${DUCK_PORT_VLESS:=$DUCK_DEFAULT_PORT_VLESS}"
     : "${DUCK_PORT_VMESS:=$DUCK_DEFAULT_PORT_VMESS}"
@@ -142,13 +169,12 @@ duck_resolve_proxy_ports() {
     duck_log_proxy_ports
     return 0
   fi
-
   if [[ "$interactive" == "1" && -t 0 ]]; then
     echo ""
     echo "代理端口（所有节点相同）"
     echo "  1) 推荐：VLESS/VMess/Trojan 常用口，SS 随机高端口"
     echo "  2) 四个都随机"
-    echo "  3) 全部手动（SS 可填 58425 或 random）"
+    echo "  3) 全部手动（SS 可填 random）"
     read -rp "选择 [1]: " _m
     case "${_m:-1}" in
       2) duck_randomize_all_proxy_ports ;;
@@ -169,9 +195,43 @@ duck_resolve_proxy_ports() {
     duck_log_proxy_ports
     return 0
   fi
-
   duck_apply_default_proxy_ports
   duck_assert_unique_ports || return 1
   duck_log_proxy_ports
-  return 0
+}
+
+duck_preflight() {
+  local script_dir="$1"
+  local ROOT DEPLOY
+  if [[ -n "${DUCK_SRC:-}" ]]; then
+    ROOT="${DUCK_SRC}"
+    DEPLOY="${DUCK_SRC}/deploy"
+  else
+    ROOT="$(cd "${script_dir}/.." && pwd)"
+    DEPLOY="${script_dir}"
+  fi
+  [[ -f "${DEPLOY}/duck.sh" ]] || DEPLOY="${script_dir}"
+  if [[ ! -f "${ROOT}/Dockerfile" && -f /opt/duck/source/Dockerfile ]]; then
+    ROOT=/opt/duck/source
+    [[ -f "${ROOT}/deploy/duck.sh" ]] && DEPLOY="${ROOT}/deploy"
+  fi
+
+  local red green fail check_grep check_not
+  red() { echo -e "\033[31m$*\033[0m" >&2; }
+  green() { echo -e "\033[32m$*\033[0m"; }
+  fail() { red "preflight 失败: $*"; exit 1; }
+  check_grep() { grep -q "$2" "$1" || fail "$1 缺少: $2"; }
+  check_not() { grep -q "$2" "$1" && fail "$1 仍含: $2"; }
+
+  [[ -f "${DEPLOY}/duck.sh" ]] || fail "找不到 deploy/duck.sh"
+  [[ -f "${ROOT}/Dockerfile" ]] || fail "找不到 Dockerfile（可设 DUCK_SRC=）"
+  check_grep "${DEPLOY}/duck.sh" '2026-10-30'
+  check_grep "${ROOT}/requirements.txt" 'APScheduler==3.10'
+  check_grep "${ROOT}/Dockerfile" "VITE_BASE_API=/api/"
+  check_grep "${ROOT}/Dockerfile" "import apscheduler; print('Duck image deps OK')"
+  check_not "${ROOT}/Dockerfile" 'import pkg_resources'
+  check_grep "${ROOT}/app/dashboard/__init__.py" '_normalize_dashboard_static_files'
+  check_grep "${DEPLOY}/env.template" 'sqlite:////var/lib/marzban'
+  [[ -f "${DEPLOY}/duck-lib.sh" ]] || fail "缺少 deploy/duck-lib.sh"
+  green "preflight OK"
 }

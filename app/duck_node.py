@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 import random
 import re
+import secrets
+import subprocess
 from copy import deepcopy
 from typing import Dict, List, Optional, TYPE_CHECKING
 
@@ -57,11 +59,119 @@ def inbound_tags_list(dbnode: "DBNode") -> Optional[List[str]]:
     return tags or None
 
 
+def normalize_protocol_list(protocols: Optional[List[str]]) -> List[str]:
+    if not protocols:
+        return list(DUCK_PROTOCOLS)
+    out: List[str] = []
+    for p in protocols:
+        key = (p or "").strip().lower()
+        if key in ("shadowsocks", "ss"):
+            key = "ss"
+        if key in DUCK_PROTOCOLS and key not in out:
+            out.append(key)
+    return out or list(DUCK_PROTOCOLS)
+
+
+def parse_enroll_pending(dbnode: "DBNode") -> Optional[dict]:
+    raw = getattr(dbnode, "proxy_ports", None)
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw) if isinstance(raw, str) else raw
+        if isinstance(data, dict) and data.get("_pending"):
+            return data
+    except (TypeError, json.JSONDecodeError):
+        pass
+    return None
+
+
+def enroll_pending_protocols(dbnode: "DBNode") -> List[str]:
+    pending = parse_enroll_pending(dbnode)
+    if pending and pending.get("protocols"):
+        return normalize_protocol_list(pending["protocols"])
+    return list(DUCK_PROTOCOLS)
+
+
+def serialize_enroll_pending(
+    protocols: List[str],
+    ports: Optional[Dict[str, int]] = None,
+    service_port: Optional[int] = None,
+    api_port: Optional[int] = None,
+) -> str:
+    data: dict = {
+        "_pending": True,
+        "protocols": normalize_protocol_list(protocols),
+    }
+    if ports:
+        data["ports"] = {k: int(ports[k]) for k in normalize_protocol_list(protocols) if k in ports}
+    if service_port:
+        data["service_port"] = int(service_port)
+    if api_port:
+        data["api_port"] = int(api_port)
+    return json.dumps(data, separators=(",", ":"))
+
+
+def enroll_pending_ports(dbnode: "DBNode") -> Optional[Dict[str, int]]:
+    pending = parse_enroll_pending(dbnode)
+    if not pending or not pending.get("ports"):
+        return None
+    try:
+        return {k: int(v) for k, v in pending["ports"].items() if k in DUCK_PROTOCOLS}
+    except (TypeError, ValueError):
+        return None
+
+
+def enroll_pending_agent_ports(dbnode: "DBNode") -> tuple[Optional[int], Optional[int]]:
+    pending = parse_enroll_pending(dbnode)
+    if not pending:
+        return None, None
+    sp = pending.get("service_port")
+    ap = pending.get("api_port")
+    return (int(sp) if sp else None, int(ap) if ap else None)
+
+
+def allocate_ports_for_protocols(
+    db,
+    protocols: List[str],
+    provided: Optional[Dict[str, int]] = None,
+) -> Dict[str, int]:
+    """主控为待安装节点分配端口（避免与已有节点/模板冲突）。"""
+    used = collect_all_used_ports(db)
+    out: Dict[str, int] = {}
+    provided = provided or {}
+    for proto in normalize_protocol_list(protocols):
+        if proto in provided and provided[proto]:
+            p = int(provided[proto])
+            if p in used:
+                raise ValueError(f"端口 {p} ({proto}) 已被占用")
+            used.add(p)
+            out[proto] = p
+        else:
+            p = random_proxy_port(used)
+            used.add(p)
+            out[proto] = p
+    return out
+
+
+def allocate_agent_ports(db) -> tuple[int, int]:
+    used = collect_all_used_ports(db)
+    for _ in range(200):
+        service = random_proxy_port(used)
+        used.add(service)
+        api = service + 1
+        if api <= 65535 and api not in used:
+            return service, api
+    service = random_proxy_port(used)
+    return service, min(service + 1, 65535)
+
+
 def parse_proxy_ports(dbnode: "DBNode") -> Optional[Dict[str, int]]:
     raw = getattr(dbnode, "proxy_ports", None)
     if raw:
         try:
             data = json.loads(raw) if isinstance(raw, str) else raw
+            if isinstance(data, dict) and data.get("_pending"):
+                return None
             return {k: int(v) for k, v in data.items() if k in DUCK_PROTOCOLS}
         except (TypeError, ValueError, json.JSONDecodeError):
             pass
@@ -102,11 +212,23 @@ def collect_used_ports_from_db(db) -> set[int]:
 
     used: set[int] = set()
     for row in db.query(DBNode).all():
+        pending = parse_enroll_pending(row)
+        if pending:
+            if isinstance(pending.get("ports"), dict):
+                used.update(int(p) for p in pending["ports"].values() if p)
+            if pending.get("service_port"):
+                used.add(int(pending["service_port"]))
+            if pending.get("api_port"):
+                used.add(int(pending["api_port"]))
         parsed = parse_proxy_ports(row)
         if parsed:
             used.update(parsed.values())
         elif getattr(row, "proxy_port", None):
             used.add(int(row.proxy_port))
+        if getattr(row, "port", None):
+            used.add(int(row.port))
+        if getattr(row, "api_port", None):
+            used.add(int(row.api_port))
     return used
 
 
@@ -199,11 +321,66 @@ def node_runtime_config(dbnode: "DBNode", config: XRayConfig) -> XRayConfig:
     legacy_single = getattr(dbnode, "proxy_port", None)
     for ib in cfg["inbounds"]:
         tag = ib.get("tag")
-        if tag in per_tag:
+        if tag == "API_INBOUND":
+            ib["port"] = int(dbnode.api_port)
+            ib["listen"] = "0.0.0.0"
+        elif tag in per_tag:
             ib["port"] = per_tag[tag]
         elif legacy_single and tag in tags and len(tags) == 1:
             ib["port"] = int(legacy_single)
     return cfg
+
+
+REALITY_SNI = "www.apple.com"
+REALITY_DEST = "www.apple.com:443"
+
+
+def generate_reality_meta() -> dict:
+    """节点 VLESS 使用 REALITY（无需 LE 证书）。"""
+    try:
+        out = subprocess.check_output(["xray", "x25519"], text=True, timeout=10)
+        private_key = ""
+        public_key = ""
+        for line in out.splitlines():
+            if "Private key" in line:
+                private_key = line.split()[-1]
+            if "Public key" in line:
+                public_key = line.split()[-1]
+        if not private_key or not public_key:
+            raise RuntimeError("x25519 output unexpected")
+    except Exception:
+        private_key = secrets.token_hex(32)
+        public_key = secrets.token_hex(32)
+    return {
+        "privateKey": private_key,
+        "publicKey": public_key,
+        "shortId": secrets.token_hex(4),
+        "sni": REALITY_SNI,
+        "dest": REALITY_DEST,
+    }
+
+
+def _apply_node_vless_reality(ib: dict, meta: dict) -> None:
+    ib["streamSettings"] = {
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {
+            "show": False,
+            "dest": meta["dest"],
+            "xver": 0,
+            "serverNames": [meta["sni"]],
+            "privateKey": meta["privateKey"],
+            "shortIds": [meta["shortId"]],
+        },
+    }
+
+
+def _strip_tls_for_node(ib: dict) -> None:
+    ss = ib.get("streamSettings") or {}
+    ss.pop("security", None)
+    ss.pop("tlsSettings", None)
+    ss.pop("realitySettings", None)
+    ib["streamSettings"] = ss
 
 
 def _template_inbound(cfg: dict, template_tag: str) -> dict:
@@ -213,13 +390,19 @@ def _template_inbound(cfg: dict, template_tag: str) -> dict:
     raise ValueError(f"Xray 配置缺少模板入站 {template_tag}")
 
 
-def provision_node_inbounds(node_name: str, ports: Dict[str, int]) -> List[str]:
-    """为主控 xray_config 增加该节点四协议入站，返回 tag 列表。"""
+def provision_node_inbounds(
+    node_name: str,
+    ports: Dict[str, int],
+    protocols: Optional[List[str]] = None,
+) -> tuple[List[str], Optional[dict]]:
+    """为主控 xray_config 增加节点入站；VLESS 用 REALITY。"""
     cfg = _load_xray_file()
     tags_map = node_inbound_tags(node_name)
     created: List[str] = []
+    reality_meta: Optional[dict] = None
+    protos = normalize_protocol_list(protocols)
 
-    for proto in DUCK_PROTOCOLS:
+    for proto in protos:
         tag = tags_map[proto]
         port = int(ports[proto])
         found = False
@@ -232,6 +415,11 @@ def provision_node_inbounds(node_name: str, ports: Dict[str, int]) -> List[str]:
             ib = _template_inbound(cfg, TEMPLATE_INBOUND_TAGS[proto])
             ib["tag"] = tag
             ib["port"] = port
+            if proto == "vless":
+                reality_meta = generate_reality_meta()
+                _apply_node_vless_reality(ib, reality_meta)
+            elif proto in ("vmess", "trojan"):
+                _strip_tls_for_node(ib)
             if ib.get("protocol") == "shadowsocks":
                 settings = ib.setdefault("settings", {})
                 settings.setdefault("method", "chacha20-poly1305")
@@ -239,19 +427,24 @@ def provision_node_inbounds(node_name: str, ports: Dict[str, int]) -> List[str]:
         created.append(tag)
 
     _save_xray_file(cfg)
-    return created
+    return created, reality_meta
 
 
 def apply_duck_node_provision(
     node_name: str,
-    ports: Optional[Dict[str, int]] = None,
-) -> tuple[str, Dict[str, int]]:
-    if ports:
-        final = merge_proxy_ports(ports)
-    else:
-        final = generate_random_proxy_ports()
-    tags = provision_node_inbounds(node_name, final)
-    return ",".join(tags), final
+    ports: Dict[str, int],
+    protocols: Optional[List[str]] = None,
+) -> tuple[str, Dict[str, int], Optional[str]]:
+    """ports 必须由节点上报；主控不再随机分配代理端口。"""
+    protos = normalize_protocol_list(protocols)
+    final: Dict[str, int] = {}
+    for proto in protos:
+        if proto not in ports or not ports[proto]:
+            raise ValueError(f"缺少节点端口: {proto}")
+        final[proto] = int(ports[proto])
+    tags, reality_meta = provision_node_inbounds(node_name, final, protocols=protos)
+    reality_json = json.dumps(reality_meta) if reality_meta else None
+    return ",".join(tags), final, reality_json
 
 
 def remove_node_inbounds_from_config(node_name: str) -> None:
@@ -278,7 +471,14 @@ def sync_node_hosts(db, dbnode: "DBNode") -> None:
     tags = inbound_tags_list(dbnode)
     if not tags:
         return
-    sni = get_panel_domain() or None
+    reality = None
+    raw_meta = getattr(dbnode, "reality_meta", None)
+    if raw_meta:
+        try:
+            reality = json.loads(raw_meta)
+        except json.JSONDecodeError:
+            reality = None
+    sni = (reality or {}).get("sni") or get_panel_domain() or None
     prefix = duck_host_remark_prefix(dbnode.name)
     ports_by_tag = tag_port_map(dbnode)
     for inbound_tag in tags:
@@ -304,10 +504,15 @@ def reload_panel_xray_config() -> None:
 
 
 def node_needs_duck_provision(dbnode: "DBNode") -> bool:
+    if parse_enroll_pending(dbnode):
+        return True
     ports = parse_proxy_ports(dbnode)
     tags = inbound_tags_list(dbnode) or []
-    if not ports or len(ports) < len(DUCK_PROTOCOLS):
+    protos = enroll_pending_protocols(dbnode) if not ports else [
+        p for p in DUCK_PROTOCOLS if p in (ports or {})
+    ]
+    if not ports:
         return True
-    if len(tags) < len(DUCK_PROTOCOLS):
+    if len(tags) < len(protos):
         return True
     return False

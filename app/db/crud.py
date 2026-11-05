@@ -1271,6 +1271,12 @@ def get_user_templates(
     return dbuser_templates.all()
 
 
+def get_node_by_enroll_token(db: Session, token: str) -> Optional[Node]:
+    if not token:
+        return None
+    return db.query(Node).filter(Node.enroll_token == token).first()
+
+
 def get_node(db: Session, name: str) -> Optional[Node]:
     """
     Retrieves a node by its name.

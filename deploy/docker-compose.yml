@@ -1,4 +1,4 @@
-# Duck 主控 — 自建镜像，不用 gozargah/marzban
+# Duck 主控 — 本地构建 duck-panel 镜像
 name: duck
 
 services:

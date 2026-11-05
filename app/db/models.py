@@ -314,6 +314,10 @@ class Node(Base):
     proxy_ports = Column(Text, nullable=True)
     inbound_tags = Column(String(1024), nullable=True)
     expire_at = Column(DateTime, nullable=True)
+    api_secret = Column(String(128), nullable=True)
+    enroll_token = Column(String(64), nullable=True)
+    enroll_expires_at = Column(DateTime, nullable=True)
+    reality_meta = Column(Text, nullable=True)
 
 
 class NodeUserUsage(Base):

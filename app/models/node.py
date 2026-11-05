@@ -19,10 +19,10 @@ class NodeSettings(BaseModel):
 
 
 class DuckProxyPorts(BaseModel):
-    vless: int = Field(ge=1, le=65535)
-    vmess: int = Field(ge=1, le=65535)
-    trojan: int = Field(ge=1, le=65535)
-    ss: int = Field(ge=1, le=65535)
+    vless: Optional[int] = Field(None, ge=1, le=65535)
+    vmess: Optional[int] = Field(None, ge=1, le=65535)
+    trojan: Optional[int] = Field(None, ge=1, le=65535)
+    ss: Optional[int] = Field(None, ge=1, le=65535)
 
 
 class Node(BaseModel):
@@ -99,10 +99,16 @@ class NodeResponse(Node):
                 data = json.loads(v)
             except json.JSONDecodeError:
                 return None
-            return DuckProxyPorts.model_validate(data)
-        if isinstance(v, dict):
-            return DuckProxyPorts.model_validate(v)
-        return v
+        elif isinstance(v, dict):
+            data = v
+        else:
+            return v
+        if isinstance(data, dict) and data.get("_pending"):
+            inner = data.get("ports")
+            if isinstance(inner, dict) and inner:
+                return DuckProxyPorts.model_validate(inner)
+            return None
+        return DuckProxyPorts.model_validate(data)
 
 
 class NodeUsageResponse(BaseModel):

@@ -23,7 +23,13 @@ WORKDIR /code
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential curl unzip gcc python3-dev libpq-dev \
-    && curl -fsSL https://github.com/Gozargah/Marzban-scripts/raw/master/install_latest_xray.sh | bash \
+    && XRAY_VER=v25.8.3 \
+    && curl -fsSL "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VER}/Xray-linux-64.zip" -o /tmp/xray.zip \
+    && unzip -oq /tmp/xray.zip -d /tmp/xray \
+    && install -m 755 /tmp/xray/xray /usr/local/bin/xray \
+    && install -d /usr/local/share/xray \
+    && cp /tmp/xray/geoip.dat /tmp/xray/geosite.dat /usr/local/share/xray/ \
+    && rm -rf /tmp/xray /tmp/xray.zip \
     && rm -rf /var/lib/apt/lists/*
 
 COPY ./requirements.txt /code/
@@ -35,7 +41,7 @@ FROM python:${PYTHON_VERSION}-slim
 ARG PYTHON_VERSION=3.12
 
 LABEL org.opencontainers.image.title="Duck Panel"
-LABEL org.opencontainers.image.description="Duck proxy panel (Marzban fork)"
+LABEL org.opencontainers.image.description="Duck master panel"
 
 ENV PYTHON_LIB_PATH=/usr/local/lib/python3.12/site-packages
 WORKDIR /code
@@ -52,9 +58,9 @@ RUN pip install --no-cache-dir 'setuptools>=69.0.0' \
 COPY . /code
 COPY --from=dashboard /dashboard/build /code/app/dashboard/build
 
-RUN ln -sf /code/marzban-cli.py /usr/bin/marzban-cli \
-    && chmod +x /usr/bin/marzban-cli \
-    && marzban-cli completion install --shell bash 2>/dev/null || true
+RUN ln -sf /code/duck-cli.py /usr/bin/duck-cli \
+    && chmod +x /code/duck-cli.py \
+    && duck-cli completion install --shell bash 2>/dev/null || true
 
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh

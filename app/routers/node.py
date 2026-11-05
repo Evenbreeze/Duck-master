@@ -14,8 +14,9 @@ from app.duck_node import (
     apply_duck_node_provision,
     duck_host_remark_prefix,
     inbound_tags_list,
-    node_needs_duck_provision,
+    normalize_protocol_list,
     parse_proxy_ports,
+    protocol_from_tag,
     reload_panel_xray_config,
     remove_node_inbounds_from_config,
     serialize_proxy_ports,
@@ -27,7 +28,6 @@ from app.models.node import (
     NodeCreate,
     NodeModify,
     NodeResponse,
-    NodeSettings,
     NodeStatus,
     NodesUsageResponse,
 )
@@ -37,12 +37,6 @@ from app.utils import responses
 router = APIRouter(
     tags=["Node"], prefix="/api", responses={401: responses._401, 403: responses._403}
 )
-
-
-class MigrateDuckNodesResponse(BaseModel):
-    upgraded: int
-    skipped: int
-    node_ids: List[int]
 
 
 def _ports_dict_from_model(ports: DuckProxyPorts | None) -> dict | None:
@@ -57,18 +51,42 @@ def _apply_duck_node_inbound(new_node: NodeCreate, dbnode, db: Session) -> None:
     provided = _ports_dict_from_model(new_node.proxy_ports)
     if new_node.proxy_port and not provided:
         provided = {"ss": new_node.proxy_port}
-    tags_csv, final_ports = apply_duck_node_provision(new_node.name, ports=provided)
+    if not provided:
+        raise ValueError("请提供各协议端口（主控不再自动随机）")
+    tags_csv, final_ports, reality_json = apply_duck_node_provision(
+        new_node.name, ports=provided, protocols=list(provided.keys())
+    )
     dbnode.inbound_tags = tags_csv
     dbnode.proxy_ports = serialize_proxy_ports(final_ports)
+    if reality_json:
+        dbnode.reality_meta = reality_json
     dbnode.proxy_port = final_ports.get("ss")
     db.commit()
     db.refresh(dbnode)
     reload_panel_xray_config()
 
 
+def _protocols_for_dbnode(dbnode) -> list[str]:
+    tags = inbound_tags_list(dbnode) or []
+    protos = [protocol_from_tag(t) for t in tags if protocol_from_tag(t)]
+    if protos:
+        return normalize_protocol_list(protos)
+    existing = parse_proxy_ports(dbnode)
+    if existing:
+        return normalize_protocol_list(list(existing.keys()))
+    return normalize_protocol_list(None)
+
+
 def _reprovision_node(dbnode, node_name: str, ports: dict | None) -> None:
-    tags_csv, final_ports = apply_duck_node_provision(node_name, ports=ports)
+    if not ports:
+        raise ValueError("端口由节点决定；请在面板填写 proxy_ports，或在节点重装并上报")
+    protos = normalize_protocol_list(list(ports.keys()))
+    tags_csv, final_ports, reality_json = apply_duck_node_provision(
+        node_name, ports=ports, protocols=protos
+    )
     dbnode.inbound_tags = tags_csv
+    if reality_json:
+        dbnode.reality_meta = reality_json
     dbnode.proxy_ports = serialize_proxy_ports(final_ports)
     dbnode.proxy_port = final_ports.get("ss")
     reload_panel_xray_config()
@@ -81,62 +99,13 @@ def _sync_hosts_for_node(dbnode) -> None:
             sync_node_hosts(db, row)
 
 
-@router.get("/node/settings", response_model=NodeSettings)
-def get_node_settings(
-    db: Session = Depends(get_db), admin: Admin = Depends(Admin.check_sudo_admin)
-):
-    """Retrieve the current node settings, including TLS certificate."""
-    tls = crud.get_tls_certificate(db)
-    return NodeSettings(certificate=tls.certificate)
-
-
-@router.post("/node", response_model=NodeResponse, responses={409: responses._409})
-def add_node(
-    new_node: NodeCreate,
-    bg: BackgroundTasks,
-    db: Session = Depends(get_db),
-    _: Admin = Depends(Admin.check_sudo_admin),
-):
-    """Add a new node to the database and optionally add it as a host."""
-    try:
-        dbnode = crud.create_node(db, new_node)
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(
-            status_code=409, detail=f'Node "{new_node.name}" already exists'
-        )
-
-    try:
-        _apply_duck_node_inbound(new_node, dbnode, db)
-    except Exception as e:
-        if new_node.duck_dedicated_inbounds:
-            try:
-                remove_node_inbounds_from_config(new_node.name)
-                reload_panel_xray_config()
-            except Exception:
-                pass
-        crud.remove_node(db, dbnode)
-        raise HTTPException(status_code=400, detail=str(e)) from e
-
-    if new_node.duck_dedicated_inbounds:
-        _sync_hosts_for_node(dbnode)
-    elif new_node.add_as_new_host:
-        from app.models.proxy import ProxyHost
-
-        host = ProxyHost(
-            remark=f"{new_node.name} ({{USERNAME}}) [{{PROTOCOL}} - {{TRANSPORT}}]",
-            address=new_node.address,
-        )
-        for inbound_tag in xray.config.inbounds_by_tag:
-            crud.add_host(db, inbound_tag, host)
-        xray.hosts.update()
-
-    sync_node_expire_state(db, dbnode)
-    if dbnode.status != NodeStatus.disabled:
-        bg.add_task(xray.operations.connect_node, node_id=dbnode.id)
-
-    logger.info(f'New node "{dbnode.name}" added')
-    return dbnode
+@router.post("/node", responses={400: responses._400})
+def add_node_deprecated(_: Admin = Depends(Admin.check_sudo_admin)):
+    """请用面板一键安装或 POST /api/node/enroll。"""
+    raise HTTPException(
+        status_code=400,
+        detail="请使用面板「一键生成节点安装命令」或 POST /api/node/enroll",
+    )
 
 
 @router.get("/node/{node_id}", response_model=NodeResponse)
@@ -243,9 +212,16 @@ def modify_node(
             if name_changed:
                 remove_node_inbounds_from_config(old_name)
             if modify.regenerate_proxy_ports:
-                ports = None
-            elif modify.proxy_ports is not None:
-                ports = modify.proxy_ports.model_dump()
+                raise HTTPException(
+                    status_code=400,
+                    detail="请重新生成安装命令，或在面板填写 proxy_ports 后保存",
+                )
+            if modify.proxy_ports is not None:
+                ports = {
+                    k: int(v)
+                    for k, v in modify.proxy_ports.model_dump().items()
+                    if v is not None
+                }
             else:
                 ports = parse_proxy_ports(dbnode)
             _reprovision_node(dbnode, new_name, ports=ports)
@@ -281,48 +257,9 @@ def regenerate_proxy_ports(
     db: Session = Depends(get_db),
     _: Admin = Depends(Admin.check_sudo_admin),
 ):
-    """重新随机该节点四协议端口并下发。"""
-    try:
-        _reprovision_node(dbnode, dbnode.name, ports=None)
-        db.commit()
-        db.refresh(dbnode)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-
-    _sync_hosts_for_node(dbnode)
-    bg.add_task(xray.operations.connect_node, node_id=dbnode.id)
-    return dbnode
-
-
-@router.post("/nodes/migrate-duck-inbounds", response_model=MigrateDuckNodesResponse)
-def migrate_duck_inbounds(
-    bg: BackgroundTasks,
-    db: Session = Depends(get_db),
-    _: Admin = Depends(Admin.check_sudo_admin),
-):
-    """将未配置四协议端口的旧节点批量升级为 Duck 独立入站。"""
-    upgraded: List[int] = []
-    skipped = 0
-    for dbnode in crud.get_nodes(db):
-        if not node_needs_duck_provision(dbnode):
-            skipped += 1
-            continue
-        try:
-            _reprovision_node(dbnode, dbnode.name, ports=None)
-            db.commit()
-            db.refresh(dbnode)
-            sync_node_hosts(db, dbnode)
-            upgraded.append(dbnode.id)
-            bg.add_task(xray.operations.connect_node, node_id=dbnode.id)
-        except Exception as e:
-            logger.error(f'migrate duck node "{dbnode.name}": {e}')
-            db.rollback()
-            skipped += 1
-
-    if upgraded:
-        reload_panel_xray_config()
-    return MigrateDuckNodesResponse(
-        upgraded=len(upgraded), skipped=skipped, node_ids=upgraded
+    raise HTTPException(
+        status_code=400,
+        detail="请重新生成安装命令分配端口，或在面板修改 proxy_ports 后保存",
     )
 
 

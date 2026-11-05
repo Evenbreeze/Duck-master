@@ -154,6 +154,10 @@ cython_debug/
 v2ray-core
 xray-core
 
+# 前端由 Docker 构建，不纳入仓库
+app/dashboard/node_modules/
+app/dashboard/build/
+
 # don't track custom/dev.json/yaml/yml configs, such as xray-custom.json or clash-dev.yaml
 *-custom.json
 *-custom.yaml

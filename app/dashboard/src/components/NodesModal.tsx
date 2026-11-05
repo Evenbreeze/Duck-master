@@ -5,7 +5,6 @@ import {
   AccordionItem,
   AccordionPanel,
   Alert,
-  AlertDescription,
   AlertIcon,
   Badge,
   Box,
@@ -13,7 +12,6 @@ import {
   ButtonProps,
   chakra,
   Checkbox,
-  Collapse,
   FormControl,
   FormLabel,
   HStack,
@@ -26,14 +24,12 @@ import {
   ModalOverlay,
   Switch,
   Text,
+  Textarea,
   Tooltip,
   useToast,
   VStack,
 } from "@chakra-ui/react";
 import {
-  EyeIcon,
-  EyeSlashIcon,
-  PlusIcon as HeroIconPlusIcon,
   SquaresPlusIcon,
 } from "@heroicons/react/24/outline";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -90,22 +86,13 @@ const ModalIcon = chakra(SquaresPlusIcon, {
   },
 });
 
-const PlusIcon = chakra(HeroIconPlusIcon, {
-  baseStyle: {
-    w: 5,
-    h: 5,
-    strokeWidth: 2,
-  },
-});
-
 type AccordionInboundType = {
   toggleAccordion: () => void;
   node: NodeType;
 };
 
 const NodeAccordion: FC<AccordionInboundType> = ({ toggleAccordion, node }) => {
-  const { updateNode, reconnectNode, regenerateProxyPorts, setDeletingNode } =
-    useNodes();
+  const { updateNode, reconnectNode, setDeletingNode } = useNodes();
   const queryClient = useQueryClient();
   const toast = useToast();
   const form = useForm<NodeType>({
@@ -129,19 +116,6 @@ const NodeAccordion: FC<AccordionInboundType> = ({ toggleAccordion, node }) => {
     {
       onSuccess: () => {
         queryClient.invalidateQueries(FetchNodesQueryKey);
-      },
-    }
-  );
-
-  const { isLoading: isRegenerating, mutate: regeneratePorts } = useMutation(
-    () => regenerateProxyPorts(node.id!),
-    {
-      onSuccess: () => {
-        generateSuccessMessage("端口已更新，节点正在重连", toast);
-        queryClient.invalidateQueries(FetchNodesQueryKey);
-      },
-      onError: (e) => {
-        generateErrorMessage(e, toast, form);
       },
     }
   );
@@ -246,8 +220,6 @@ const NodeAccordion: FC<AccordionInboundType> = ({ toggleAccordion, node }) => {
           isLoading={isLoading}
           submitBtnText={"保存"}
           isEdit
-          onRegeneratePorts={() => regeneratePorts()}
-          isRegenerating={isRegenerating}
           btnLeftAdornment={
             <Tooltip label={"删除"} placement="top">
               <IconButton
@@ -267,80 +239,6 @@ const NodeAccordion: FC<AccordionInboundType> = ({ toggleAccordion, node }) => {
   );
 };
 
-type AddNodeFormType = {
-  toggleAccordion: () => void;
-  resetAccordions: () => void;
-};
-
-const AddNodeForm: FC<AddNodeFormType> = ({
-  toggleAccordion,
-  resetAccordions,
-}) => {
-  const toast = useToast();
-  const queryClient = useQueryClient();
-  const { addNode } = useNodes();
-  const form = useForm<NodeType>({
-    resolver: zodResolver(NodeSchema),
-    defaultValues: {
-      ...getNodeDefaultValues(),
-      add_as_new_host: false,
-      duck_dedicated_inbounds: true,
-      duck_manual_ports: false,
-    },
-  });
-  const { isLoading, mutate } = useMutation(addNode, {
-    onSuccess: () => {
-      generateSuccessMessage(
-        `节点 ${form.getValues("name")} 添加成功`,
-        toast
-      );
-      queryClient.invalidateQueries(FetchNodesQueryKey);
-      form.reset();
-      resetAccordions();
-    },
-    onError: (e) => {
-      generateErrorMessage(e, toast, form);
-    },
-  });
-  return (
-    <AccordionItem
-      border="1px solid"
-      _dark={{ borderColor: "gray.600" }}
-      _light={{ borderColor: "gray.200" }}
-      borderRadius="4px"
-      p={1}
-      w="full"
-    >
-      <AccordionButton px={2} borderRadius="3px" onClick={toggleAccordion}>
-        <Text
-          as="span"
-          fontWeight="medium"
-          fontSize="sm"
-          flex="1"
-          textAlign="left"
-          color="gray.700"
-          _dark={{ color: "gray.300" }}
-          display="flex"
-          gap={1}
-        >
-          <PlusIcon display={"inline-block"} />{" "}
-          <span>{"添加新的 Duck 节点"}</span>
-        </Text>
-      </AccordionButton>
-      <AccordionPanel px={2} py={4}>
-        <NodeForm
-          form={form}
-          mutate={mutate}
-          isLoading={isLoading}
-          submitBtnText={"添加节点"}
-          btnProps={{ variant: "solid" }}
-          addAsHost
-        />
-      </AccordionPanel>
-    </AccordionItem>
-  );
-};
-
 type NodeFormType = FC<{
   form: UseFormReturn<NodeType>;
   mutate: UseMutateFunction<unknown, unknown, any>;
@@ -350,8 +248,6 @@ type NodeFormType = FC<{
   btnLeftAdornment?: ReactNode;
   addAsHost?: boolean;
   isEdit?: boolean;
-  onRegeneratePorts?: () => void;
-  isRegenerating?: boolean;
 }>;
 
 const NodeForm: NodeFormType = ({
@@ -363,38 +259,10 @@ const NodeForm: NodeFormType = ({
   btnLeftAdornment,
   addAsHost = false,
   isEdit = false,
-  onRegeneratePorts,
-  isRegenerating = false,
 }) => {
-  const [showCertificate, setShowCertificate] = useState(false);
   const duckDedicated = form.watch("duck_dedicated_inbounds") !== false;
   const duckManual = form.watch("duck_manual_ports") === true;
   const proxyPorts = form.watch("proxy_ports");
-  const { data: nodeSettings, isLoading: nodeSettingsLoading } = useQuery({
-    queryKey: "node-settings",
-    queryFn: () =>
-      fetch<{
-        min_node_version: string;
-        certificate: string;
-      }>("/node/settings"),
-  });
-  function selectText(node: HTMLElement) {
-    // @ts-ignore
-    if (document.body.createTextRange) {
-      // @ts-ignore
-      const range = document.body.createTextRange();
-      range.moveToElementText(node);
-      range.select();
-    } else if (window.getSelection) {
-      const selection = window.getSelection();
-      const range = document.createRange();
-      range.selectNodeContents(node);
-      selection!.removeAllRanges();
-      selection!.addRange(range);
-    } else {
-      console.warn("Could not select text in node: Unsupported browser.");
-    }
-  }
 
   const buildPayload = (values: NodeType) => {
     const body: Record<string, unknown> = { ...values };
@@ -428,69 +296,6 @@ const NodeForm: NodeFormType = ({
   return (
     <form onSubmit={form.handleSubmit((v) => mutate(buildPayload(v)))}>
       <VStack>
-        {nodeSettings && nodeSettings.certificate && (
-          <Alert status="info" alignItems="start">
-            <AlertDescription
-              display="flex"
-              flexDirection="column"
-              overflow="hidden"
-            >
-              <span>{"要设置 Duck 节点，您需要在节点上设置此证书以初始化主服务器和节点之间的安全连接"}</span>
-              <HStack justify="end" py={2}>
-                <Button
-                  as="a"
-                  colorScheme="primary"
-                  size="xs"
-                  download="ssl_client_cert.pem"
-                  href={URL.createObjectURL(
-                    new Blob([nodeSettings.certificate], { type: "text/plain" })
-                  )}
-                >
-                  {"下载证书"}
-                </Button>
-                <Tooltip
-                  placement="top"
-                  label={showCertificate ? "隐藏证书" : "显示证书"}
-                >
-                  <IconButton
-                    aria-label={showCertificate ? "隐藏证书" : "显示证书"}
-                    onClick={setShowCertificate.bind(null, !showCertificate)}
-                    colorScheme="whiteAlpha"
-                    color="primary"
-                    size="xs"
-                  >
-                    {!showCertificate ? (
-                      <EyeIcon width="15px" />
-                    ) : (
-                      <EyeSlashIcon width="15px" />
-                    )}
-                  </IconButton>
-                </Tooltip>
-              </HStack>
-              <Collapse in={showCertificate} animateOpacity>
-                <Text
-                  bg="rgba(255,255,255,.5)"
-                  _dark={{
-                    bg: "rgba(255,255,255,.2)",
-                  }}
-                  rounded="md"
-                  p="2"
-                  lineHeight="1.2"
-                  fontSize="10px"
-                  fontFamily="Courier"
-                  whiteSpace="pre"
-                  overflow="auto"
-                  onClick={(e) => {
-                    selectText(e.target as HTMLElement);
-                  }}
-                >
-                  {nodeSettings.certificate}
-                </Text>
-              </Collapse>
-            </AlertDescription>
-          </Alert>
-        )}
-
         <HStack w="full">
           <FormControl>
             <CustomInput
@@ -583,21 +388,21 @@ const NodeForm: NodeFormType = ({
               {"当前节点代理端口"}
             </Text>
             <Text fontFamily="mono">
-              VLESS {proxyPorts?.vless} · VMess {proxyPorts?.vmess} · Trojan{" "}
-              {proxyPorts?.trojan} · SS {proxyPorts?.ss}
+              {(
+                [
+                  ["vless", "VLESS"],
+                  ["vmess", "VMess"],
+                  ["trojan", "Trojan"],
+                  ["ss", "SS"],
+                ] as const
+              )
+                .filter(([k]) => proxyPorts?.[k])
+                .map(([k, label]) => `${label} ${proxyPorts?.[k]}`)
+                .join(" · ") || "—"}
             </Text>
-            {isEdit && onRegeneratePorts && (
-              <Button
-                size="xs"
-                mt={2}
-                variant="outline"
-                colorScheme="primary"
-                isLoading={isRegenerating}
-                onClick={onRegeneratePorts}
-              >
-                {"重新随机四协议端口"}
-              </Button>
-            )}
+            <Text mt={1}>
+              {"端口由主控分配；安装后可在面板修改节点并保存，主控会重推配置。"}
+            </Text>
           </Box>
         ) : null}
         <FormControl w="full">
@@ -697,23 +502,15 @@ export const NodesDialog: FC = () => {
   const toast = useToast();
   const queryClient = useQueryClient();
   const [openAccordions, setOpenAccordions] = useState<any>({});
+  const [installCommand, setInstallCommand] = useState("");
+  const [enrollProtocols, setEnrollProtocols] = useState({
+    vless: true,
+    vmess: false,
+    trojan: false,
+    ss: false,
+  });
   const { data: nodes, isLoading } = useNodesQuery();
-  const { migrateDuckInbounds } = useNodes();
-  const { isLoading: isMigrating, mutate: migrateNodes } = useMutation(
-    migrateDuckInbounds,
-    {
-      onSuccess: (data: { upgraded: number; skipped: number }) => {
-        generateSuccessMessage(
-          `已升级 ${data.upgraded} 个节点，跳过 ${data.skipped} 个`,
-          toast
-        );
-        queryClient.invalidateQueries(FetchNodesQueryKey);
-      },
-      onError: (e) => {
-        generateErrorMessage(e, toast);
-      },
-    }
-  );
+  const { enrollNode } = useNodes();
 
   const onClose = () => {
     setOpenAccordions({});
@@ -741,18 +538,81 @@ export const NodesDialog: FC = () => {
           <ModalCloseButton mt={3} />
           <ModalBody w="440px" pb={6} pt={3}>
             <Text mb={3} opacity={0.8} fontSize="sm">
-              {"使用 Duck-Node，您可以通过在不同的服务器上添加不同的节点来提供多节点负载。"}
+              {
+                "协议在此勾选；端口与 Agent 口由主控分配并写入安装命令。装好后用户/订阅/Host 均在主控操作，节点只跑代理。"
+              }
             </Text>
+            <FormControl mb={2}>
+              <FormLabel fontSize="sm">{"节点协议"}</FormLabel>
+              <HStack wrap="wrap" spacing={4}>
+                {(
+                  [
+                    ["vless", "VLESS"],
+                    ["vmess", "VMess"],
+                    ["trojan", "Trojan"],
+                    ["ss", "SS"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <Checkbox
+                    key={key}
+                    isChecked={enrollProtocols[key]}
+                    onChange={(e) =>
+                      setEnrollProtocols((s) => ({
+                        ...s,
+                        [key]: e.target.checked,
+                      }))
+                    }
+                  >
+                    {label}
+                  </Checkbox>
+                ))}
+              </HStack>
+            </FormControl>
             <Button
-              size="xs"
-              variant="outline"
+              size="sm"
               colorScheme="primary"
-              mb={3}
-              isLoading={isMigrating}
-              onClick={() => migrateNodes()}
+              mb={2}
+              w="full"
+              onClick={async () => {
+                const name = window.prompt("新节点名称（如 香港-01）");
+                if (!name?.trim()) return;
+                const protocols = (
+                  Object.entries(enrollProtocols) as [
+                    keyof typeof enrollProtocols,
+                    boolean
+                  ][]
+                )
+                  .filter(([, on]) => on)
+                  .map(([p]) => p);
+                if (!protocols.length) {
+                  generateErrorMessage(new Error("请至少勾选一种协议"), toast);
+                  return;
+                }
+                try {
+                  const res = await enrollNode(name.trim(), protocols);
+                  const portsLine = res.proxy_ports
+                    ? `# 主控分配端口: ${JSON.stringify(res.proxy_ports)} agent ${res.service_port}/${res.api_port}\n`
+                    : "";
+                  setInstallCommand(portsLine + res.install_command);
+                  queryClient.invalidateQueries(FetchNodesQueryKey);
+                  generateSuccessMessage("已生成安装命令，复制到新 VPS 执行", toast);
+                } catch (e) {
+                  generateErrorMessage(e, toast);
+                }
+              }}
             >
-              {"升级全部旧节点（四协议随机端口）"}
+              {"生成节点安装命令"}
             </Button>
+            {installCommand ? (
+              <Textarea
+                mb={3}
+                fontSize="xs"
+                rows={3}
+                readOnly
+                value={installCommand}
+                onFocus={(e) => e.target.select()}
+              />
+            ) : null}
             {isLoading && "加载中..."}
 
             <Accordion
@@ -773,10 +633,6 @@ export const NodesDialog: FC = () => {
                     );
                   })}
 
-                <AddNodeForm
-                  toggleAccordion={() => toggleAccordion((nodes || []).length)}
-                  resetAccordions={() => setOpenAccordions({})}
-                />
               </VStack>
             </Accordion>
           </ModalBody>

@@ -3,8 +3,9 @@ from fastapi import APIRouter, Depends
 from app.duck_telegram import apply_update, public_view
 from app.models.admin import Admin
 from app.models.telegram_settings import TelegramSettingsPublic, TelegramSettingsUpdate
+from app.utils import responses
 
-router = APIRouter(tags=["Telegram"], prefix="/api")
+router = APIRouter(tags=["Telegram"], prefix="/api", responses={403: responses._403})
 
 
 @router.get("/telegram/settings", response_model=TelegramSettingsPublic)
@@ -22,6 +23,5 @@ def put_telegram_settings(
         admin_ids=body.admin_ids,
         logger_channel_id=body.logger_channel_id,
         proxy_url=body.proxy_url,
-        keep_token_if_empty=True,
     )
     return TelegramSettingsPublic(**public_view())

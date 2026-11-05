@@ -17,7 +17,7 @@ logger = logging.getLogger("uvicorn.error")
 
 def _normalize_dashboard_static_files() -> None:
     """
-    Vite 默认输出 /assets/*，Marzban 约定挂载 /statics/。
+    Vite 默认输出 /assets/*，Duck 面板挂载 /statics/。
     启动时复制并重写 index.html，避免 /dashboard/ 白屏（无需手改容器）。
     """
     if not build_dir.is_dir():
