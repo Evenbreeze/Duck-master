@@ -12,7 +12,7 @@ import requests
 from requests.adapters import HTTPAdapter
 
 from app.xray.config import XRayConfig
-from app.xray.node import NodeAPIError
+from app.xray.errors import NodeAPIError
 
 
 def _prepare_config(config: XRayConfig) -> XRayConfig:
