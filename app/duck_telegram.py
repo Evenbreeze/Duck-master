@@ -89,3 +89,6 @@ def apply_update(
         data["proxy_url"] = proxy_url
     save_raw(data)
     merge_into_config()
+    from app.telegram import apply_apihelper_proxy
+
+    apply_apihelper_proxy()

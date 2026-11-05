@@ -27,11 +27,12 @@ import {
   FetchNodesQueryKey,
   NodeSchema,
   NodeType,
+  NodeUpdatePayload,
   useNodes,
   useNodesQuery,
 } from "contexts/NodesContext";
 import dayjs from "dayjs";
-import { FC, ReactNode, useMemo, useState } from "react";
+import { FC, ReactNode, useEffect, useMemo, useState } from "react";
 import ReactDatePicker from "react-datepicker";
 import { Controller, useForm, UseFormReturn } from "react-hook-form";
 import {
@@ -98,6 +99,29 @@ const NodeAccordion: FC<{ node: NodeType }> = ({ node }) => {
     defaultValues: nodeFormDefaults(node),
     resolver: zodResolver(NodeSchema),
   });
+
+  const nodeSyncKey = useMemo(
+    () =>
+      JSON.stringify({
+        id: node.id,
+        status: node.status,
+        message: node.message,
+        xray_version: node.xray_version,
+        protocols: node.protocols,
+        proxy_ports: node.proxy_ports,
+        reality_sni: node.reality_sni,
+        address: node.address,
+        port: node.port,
+        api_port: node.api_port,
+      }),
+    [node]
+  );
+
+  useEffect(() => {
+    if (!form.formState.isDirty) {
+      form.reset(nodeFormDefaults(node));
+    }
+  }, [nodeSyncKey, node]);
 
   const handleDeleteNode = setDeletingNode.bind(null, node);
 
@@ -236,7 +260,7 @@ const NodeAccordion: FC<{ node: NodeType }> = ({ node }) => {
 const NodeEditForm: FC<{
   node: NodeType;
   form: UseFormReturn<NodeType>;
-  mutate: UseMutateFunction<unknown, unknown, NodeType>;
+  mutate: UseMutateFunction<unknown, unknown, NodeUpdatePayload>;
   isLoading: boolean;
   btnLeftAdornment?: ReactNode;
 }> = ({ node, form, mutate, isLoading, btnLeftAdornment }) => {
@@ -256,12 +280,10 @@ const NodeEditForm: FC<{
         proxy_ports[k] = Number(raw);
       }
     }
-    const body: NodeType = {
+    const body: NodeUpdatePayload = {
       id: values.id,
       name: values.name,
       address: values.address,
-      port: values.port,
-      api_port: values.api_port,
       usage_coefficient: values.usage_coefficient,
       expire_at: values.expire_at ?? null,
       protocols,
@@ -277,7 +299,7 @@ const NodeEditForm: FC<{
   };
 
   return (
-    <form onSubmit={form.handleSubmit((v) => mutate(buildPayload(v) as NodeType))}>
+    <form onSubmit={form.handleSubmit((v) => mutate(buildPayload(v)))}>
       <VStack align="stretch" spacing={3}>
         <HStack>
           <CustomInput
@@ -297,7 +319,13 @@ const NodeEditForm: FC<{
                     colorScheme="primary"
                     isChecked={field.value !== "disabled"}
                     onChange={(e) =>
-                      field.onChange(e.target.checked ? "connecting" : "disabled")
+                      field.onChange(
+                        e.target.checked
+                          ? field.value === "disabled"
+                            ? "connecting"
+                            : field.value
+                          : "disabled"
+                      )
                     }
                   />
                 </Box>
@@ -358,18 +386,18 @@ const NodeEditForm: FC<{
           />
         )}
 
-        <HStack>
+        <HStack align="flex-start">
           <CustomInput
             label="Agent 端口"
             size="sm"
+            isReadOnly
             {...form.register("port")}
-            error={form.formState.errors.port?.message}
           />
           <CustomInput
             label="Xray API 端口"
             size="sm"
+            isReadOnly
             {...form.register("api_port")}
-            error={form.formState.errors.api_port?.message}
           />
           <CustomInput
             label="流量系数"

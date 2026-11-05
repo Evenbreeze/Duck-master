@@ -17,6 +17,7 @@ RUN VITE_BASE_API=/api/ npm run build && cp build/index.html build/404.html \
 
 # --- Python 依赖 + Xray ---
 FROM python:${PYTHON_VERSION}-slim AS build
+ARG TARGETARCH
 
 ENV PYTHONUNBUFFERED=1
 WORKDIR /code
@@ -24,7 +25,8 @@ WORKDIR /code
 RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential curl unzip gcc python3-dev libpq-dev \
     && XRAY_VER=v25.8.3 \
-    && curl -fsSL "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VER}/Xray-linux-64.zip" -o /tmp/xray.zip \
+    && case "${TARGETARCH}" in amd64) XRAY_PKG=Xray-linux-64.zip ;; arm64) XRAY_PKG=Xray-linux-arm64-v8a.zip ;; *) exit 1 ;; esac \
+    && curl -fsSL "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VER}/${XRAY_PKG}" -o /tmp/xray.zip \
     && unzip -oq /tmp/xray.zip -d /tmp/xray \
     && install -m 755 /tmp/xray/xray /usr/local/bin/xray \
     && install -d /usr/local/share/xray \

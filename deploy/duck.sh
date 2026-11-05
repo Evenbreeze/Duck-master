@@ -19,14 +19,6 @@ SERVICE="${DUCK_SERVICE:-panel}"
 # shellcheck source=duck-lib.sh
 source "${SCRIPT_DIR}/duck-lib.sh"
 
-case "$(basename "$0")" in
-  fix-panel.sh|fix-panel) set -- fix "$@";;
-  install.sh) set -- install "$@";;
-  reinstall.sh) set -- reinstall "$@";;
-  preflight.sh) set -- preflight "$@";;
-  acme-install-cert.sh) set -- acme-cert "$@";;
-esac
-
 red() { echo -e "\033[31m$*\033[0m" >&2; }
 green() { echo -e "\033[32m$*\033[0m"; }
 yellow() { echo -e "\033[33m$*\033[0m"; }
@@ -343,8 +335,7 @@ case "${1:-}" in
   restart|logs|status|cli|rebuild|ports  运维
 
 一键（任意目录）:
-  curl -fsSL https://raw.githubusercontent.com/${DUCK_GITHUB_REPO}/master/deploy/duck.sh | sudo bash -s upgrade
-  （若默认分支是 main，把 URL 里的 master 改成 main）
+  curl -fsSL https://raw.githubusercontent.com/${DUCK_GITHUB_REPO}/main/deploy/duck.sh | sudo bash -s upgrade
 EOF
     ;;
   *)

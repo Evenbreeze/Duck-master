@@ -21,11 +21,10 @@ export const NodesUsagePanel: FC = () => {
   const [usageFilter, setUsageFilter] = useState("1m");
 
   const fetchUsageWithFilter = (query: FilterUsageType) => {
-    fetchNodesUsage(query).then((data: any) => {
+    fetchNodesUsage(query).then((data) => {
       const labels: string[] = [];
       const series: number[] = [];
-      for (const key in data.usages) {
-        const entry = data.usages[key];
+      for (const entry of data.usages ?? []) {
         series.push(entry.uplink + entry.downlink);
         labels.push(entry.node_name);
       }

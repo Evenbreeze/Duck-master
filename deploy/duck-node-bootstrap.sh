@@ -113,8 +113,16 @@ command -v apt-get >/dev/null && apt-get update -qq && apt-get install -y -qq cu
 
 XRAY_VER="v25.8.3"
 if ! command -v xray >/dev/null; then
+  case "$(uname -m)" in
+    x86_64|amd64) xray_pkg="Xray-linux-64.zip" ;;
+    aarch64|arm64) xray_pkg="Xray-linux-arm64-v8a.zip" ;;
+    *)
+      echo "不支持的 CPU 架构: $(uname -m)" >&2
+      exit 1
+      ;;
+  esac
   tmp="$(mktemp -d)"
-  curl -fsSL "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VER}/Xray-linux-64.zip" -o "$tmp/x.zip"
+  curl -fsSL "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VER}/${xray_pkg}" -o "$tmp/x.zip"
   unzip -oq "$tmp/x.zip" -d "$tmp"
   install -m 755 "$tmp/xray" /usr/local/bin/xray
   rm -rf "$tmp"

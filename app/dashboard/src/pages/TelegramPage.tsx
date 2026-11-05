@@ -60,7 +60,7 @@ export const TelegramPage: FC = () => {
           logger_channel_id: Number(form.logger_channel_id) || 0,
         },
       });
-      generateSuccessMessage("已保存，在主控执行 duck restart 启动 Bot", toast);
+      generateSuccessMessage("已保存", toast);
     } catch (e) {
       generateErrorMessage(e, toast);
     } finally {
@@ -72,7 +72,7 @@ export const TelegramPage: FC = () => {
     <>
       <PageHeader
         title="Telegram"
-        description="用户到期、流量告警等通知。保存后重启面板容器使 Bot 生效。"
+        description="Bot 通知。保存后若 Bot 未生效：duck restart"
       />
       <Box
         maxW="lg"

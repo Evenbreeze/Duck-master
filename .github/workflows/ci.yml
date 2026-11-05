@@ -7,7 +7,7 @@ on:
     branches: [main, master]
 
 jobs:
-  dashboard:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,6 +17,8 @@ jobs:
           cache: npm
           cache-dependency-path: app/dashboard/package-lock.json
       - working-directory: app/dashboard
-        run: |
-          npm ci
-          VITE_BASE_API=/api/ npm run build
+        run: npm ci && VITE_BASE_API=/api/ npm run build
+      - run: bash deploy/duck.sh preflight
+      - run: |
+          docker build -t duck-panel:ci .
+          docker run --rm duck-panel:ci python -c "import apscheduler"

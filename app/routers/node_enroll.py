@@ -1,4 +1,4 @@
-"""Duck 节点一键注册（HTTP + enroll token，无第三方节点程序）。"""
+"""节点 enroll / register / 安装脚本下发。"""
 from __future__ import annotations
 
 import secrets

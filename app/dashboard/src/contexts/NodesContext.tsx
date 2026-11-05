@@ -60,6 +60,18 @@ export const NodeSchema = z.object({
 
 export type NodeType = z.infer<typeof NodeSchema>;
 
+export type NodeUpdatePayload = {
+  id?: number | null;
+  name: string;
+  address: string;
+  usage_coefficient: number;
+  expire_at?: number | null;
+  protocols?: ("vless" | "vmess" | "trojan" | "ss")[];
+  proxy_ports?: Record<string, number>;
+  reality_sni?: string;
+  status?: NodeType["status"];
+};
+
 export const getNodeDefaultValues = (): NodeType => ({
   name: "",
   address: "",
@@ -88,10 +100,15 @@ export type NodeStore = {
     api_port: number;
   }>;
   fetchNodes: () => Promise<NodeType[]>;
-  fetchNodesUsage: (
-    query: FilterUsageType
-  ) => Promise<{ usages: Record<string, unknown> }>;
-  updateNode: (node: NodeType) => Promise<unknown>;
+  fetchNodesUsage: (query: FilterUsageType) => Promise<{
+    usages: {
+      node_id?: number | null;
+      node_name: string;
+      uplink: number;
+      downlink: number;
+    }[];
+  }>;
+  updateNode: (node: NodeUpdatePayload) => Promise<unknown>;
   reconnectNode: (node: NodeType) => Promise<unknown>;
   deletingNode?: NodeType | null;
   deleteNode: () => Promise<unknown>;
@@ -104,7 +121,7 @@ export const useNodesQuery = () => {
   return useQuery({
     queryKey: FetchNodesQueryKey,
     queryFn: useNodes.getState().fetchNodes,
-    refetchInterval: onNodesPage ? 3000 : undefined,
+    refetchInterval: onNodesPage ? 5000 : undefined,
     refetchOnWindowFocus: false,
   });
 };

@@ -109,7 +109,6 @@ def _sync_hosts_for_node(dbnode) -> None:
 
 
 def _provision_fields_changed(dbnode, modify: NodeModify) -> bool:
-    """面板每次 PUT 都会带上 protocols/ports；仅在内容变化时才 reprovision。"""
     if modify.protocols is not None:
         if normalize_protocol_list(modify.protocols) != _protocols_for_dbnode(dbnode):
             return True
@@ -230,6 +229,9 @@ def modify_node(
     """Modify an existing node's configuration."""
     reprovisioned = False
     was_disabled = dbnode.status == NodeStatus.disabled
+    prev_address = dbnode.address
+    prev_port = dbnode.port
+    prev_api_port = dbnode.api_port
     old_name = dbnode.name
     new_name = modify.name if modify.name is not None else dbnode.name
     name_changed = modify.name is not None and modify.name != old_name
@@ -268,22 +270,30 @@ def modify_node(
                 db_clean, duck_host_remark_prefix(old_name)
             )
 
-    if reprovisioned or modify.address is not None or name_changed:
+    if reprovisioned or name_changed:
+        _sync_hosts_for_node(dbnode)
+    elif modify.address is not None and modify.address.strip() != (prev_address or "").strip():
         _sync_hosts_for_node(dbnode)
 
     if modify.status is NodeStatus.disabled:
         bg.add_task(xray.operations.remove_node, node_id=dbnode.id)
         return dbnode
 
-    need_agent = reprovisioned or any(
-        getattr(modify, field) is not None
-        for field in ("address", "port", "api_port")
-    )
+    need_agent = reprovisioned
+    if modify.address is not None and modify.address.strip() != (prev_address or "").strip():
+        need_agent = True
+    if modify.port is not None and int(modify.port) != int(prev_port):
+        need_agent = True
+    if modify.api_port is not None and int(modify.api_port) != int(prev_api_port):
+        need_agent = True
     if (
-        need_agent
-        and dbnode.status != NodeStatus.disabled
-        and not node_is_expired(dbnode)
+        was_disabled
+        and modify.status is not None
+        and modify.status is not NodeStatus.disabled
     ):
+        need_agent = True
+
+    if need_agent and dbnode.status != NodeStatus.disabled and not node_is_expired(dbnode):
         if reprovisioned:
             try:
                 if xray.nodes[dbnode.id].connected:
@@ -294,13 +304,6 @@ def modify_node(
                 bg.add_task(xray.operations.connect_node, node_id=dbnode.id)
         else:
             bg.add_task(xray.operations.connect_node, node_id=dbnode.id)
-    elif (
-        was_disabled
-        and modify.status is not None
-        and modify.status is not NodeStatus.disabled
-        and not node_is_expired(dbnode)
-    ):
-        bg.add_task(xray.operations.connect_node, node_id=dbnode.id)
 
     return dbnode
 

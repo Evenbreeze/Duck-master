@@ -32,6 +32,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+from app.duck_telegram import merge_into_config
+
+merge_into_config()
+
 from app import dashboard, jobs, routers, telegram  # noqa
 from app.routers import api_router  # noqa
 
