@@ -1,8 +1,9 @@
 import { useQuery } from "react-query";
+import { useLocation } from "react-router-dom";
 import { fetch } from "service/http";
 import { z } from "zod";
 import { create } from "zustand";
-import { FilterUsageType, useDashboard } from "./DashboardContext";
+import { FilterUsageType } from "./DashboardContext";
 
 const portField = z.union([
   z.number().min(1).max(65535),
@@ -87,21 +88,23 @@ export type NodeStore = {
     api_port: number;
   }>;
   fetchNodes: () => Promise<NodeType[]>;
-  fetchNodesUsage: (query: FilterUsageType) => Promise<void>;
+  fetchNodesUsage: (
+    query: FilterUsageType
+  ) => Promise<{ usages: Record<string, unknown> }>;
   updateNode: (node: NodeType) => Promise<unknown>;
   reconnectNode: (node: NodeType) => Promise<unknown>;
-  regenerateProxyPorts: (nodeId: number) => Promise<unknown>;
   deletingNode?: NodeType | null;
   deleteNode: () => Promise<unknown>;
   setDeletingNode: (node: NodeType | null) => void;
 };
 
 export const useNodesQuery = () => {
-  const { isEditingNodes } = useDashboard();
+  const { pathname } = useLocation();
+  const onNodesPage = pathname.includes("nodes");
   return useQuery({
     queryKey: FetchNodesQueryKey,
     queryFn: useNodes.getState().fetchNodes,
-    refetchInterval: isEditingNodes ? 3000 : undefined,
+    refetchInterval: onNodesPage ? 3000 : undefined,
     refetchOnWindowFocus: false,
   });
 };
@@ -121,11 +124,6 @@ export const useNodes = create<NodeStore>((set, get) => ({
     return fetch(`/node/${body.id}`, {
       method: "PUT",
       body,
-    });
-  },
-  regenerateProxyPorts(nodeId) {
-    return fetch(`/node/${nodeId}/regenerate-proxy-ports`, {
-      method: "POST",
     });
   },
   setDeletingNode(node) {

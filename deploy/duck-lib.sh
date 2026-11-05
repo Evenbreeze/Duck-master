@@ -71,8 +71,8 @@ duck_rsync_repo_to_opt_source() {
 
 duck_install_opt_deploy_files() {
   local d="$1"
-  install -d /opt/duck/deploy /opt/marzban
-  cp "$d/docker-compose.yml" /opt/marzban/docker-compose.yml
+  install -d /opt/duck/deploy /opt/duck
+  cp "$d/docker-compose.yml" /opt/duck/docker-compose.yml
   cp "$d/duck.sh" "$d/duck-lib.sh" "$d/duck-node-bootstrap.sh" \
     "$d/env.template" "$d/xray_config.template.json" \
     "$d/docker-compose.yml" /opt/duck/deploy/
@@ -262,13 +262,13 @@ duck_preflight() {
 
   [[ -f "${DEPLOY}/duck.sh" ]] || fail "找不到 deploy/duck.sh"
   [[ -f "${ROOT}/Dockerfile" ]] || fail "找不到 Dockerfile（可设 DUCK_SRC=）"
-  check_grep "${DEPLOY}/duck.sh" '2026-11-05'
+  check_grep "${DEPLOY}/duck.sh" '2026-11-06'
   check_grep "${ROOT}/requirements.txt" 'APScheduler==3.10'
   check_grep "${ROOT}/Dockerfile" "VITE_BASE_API=/api/"
   check_grep "${ROOT}/Dockerfile" "import apscheduler; print('Duck image deps OK')"
   check_not "${ROOT}/Dockerfile" 'import pkg_resources'
   check_grep "${ROOT}/app/dashboard/__init__.py" '_normalize_dashboard_static_files'
-  check_grep "${DEPLOY}/env.template" 'sqlite:////var/lib/marzban'
+  check_grep "${DEPLOY}/env.template" 'sqlite:////var/lib/duck'
   [[ -f "${DEPLOY}/duck-lib.sh" ]] || fail "缺少 deploy/duck-lib.sh"
   green "preflight OK"
 }

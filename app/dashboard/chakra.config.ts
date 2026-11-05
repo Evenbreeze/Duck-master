@@ -5,21 +5,35 @@ export const theme = extendTheme({
     body: `Inter,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Oxygen,Ubuntu,Cantarell,Fira Sans,Droid Sans,Helvetica Neue,sans-serif`,
   },
   colors: {
-    "light-border": "#d2d2d4",
+    "light-border": "#e2e8f0",
+    app: {
+      bg: "#f1f5f9",
+      bgDark: "#0f172a",
+      surface: "rgba(255,255,255,0.85)",
+      surfaceDark: "rgba(30,41,59,0.92)",
+    },
     primary: {
-      50: "#9cb7f2",
-      100: "#88a9ef",
-      200: "#749aec",
-      300: "#618ce9",
-      400: "#4d7de7",
-      500: "#396fe4",
-      600: "#3364cd",
-      700: "#2e59b6",
-      800: "#284ea0",
-      900: "#224389",
+      50: "#ecfeff",
+      100: "#cffafe",
+      200: "#a5f3fc",
+      300: "#67e8f9",
+      400: "#22d3ee",
+      500: "#06b6d4",
+      600: "#0891b2",
+      700: "#0e7490",
+      800: "#155e75",
+      900: "#164e63",
     },
     gray: {
-      750: "#222C3B",
+      750: "#1e293b",
+    },
+  },
+  styles: {
+    global: {
+      body: {
+        color: "gray.800",
+        _dark: { color: "gray.100" },
+      },
     },
   },
   components: {

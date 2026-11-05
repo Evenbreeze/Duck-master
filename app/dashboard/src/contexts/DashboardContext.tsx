@@ -43,14 +43,9 @@ type DashboardStateType = {
   filters: FilterType;
   subscribeUrl: string | null;
   QRcodeLinks: string[] | null;
-  isEditingHosts: boolean;
-  isEditingNodes: boolean;
-  isShowingNodesUsage: boolean;
   isResetingAllUsage: boolean;
   resetUsageUser: User | null;
   revokeSubscriptionUser: User | null;
-  isEditingCore: boolean;
-  isEditingTelegram: boolean;
   onCreateUser: (isOpen: boolean) => void;
   onEditingUser: (user: User | null) => void;
   onDeletingUser: (user: User | null) => void;
@@ -64,9 +59,6 @@ type DashboardStateType = {
   fetchUserUsage: (user: User, query: FilterUsageType) => Promise<void>;
   setQRCode: (links: string[] | null) => void;
   setSubLink: (subscribeURL: string | null) => void;
-  onEditingHosts: (isEditingHosts: boolean) => void;
-  onEditingNodes: (isEditingHosts: boolean) => void;
-  onShowingNodesUsage: (isShowingNodesUsage: boolean) => void;
   resetDataUsage: (user: User) => Promise<void>;
   revokeSubscription: (user: User) => Promise<void>;
 };
@@ -112,19 +104,14 @@ export const useDashboard = create(
     },
     loading: true,
     isResetingAllUsage: false,
-    isEditingHosts: false,
-    isEditingNodes: false,
-    isShowingNodesUsage: false,
     resetUsageUser: null,
     revokeSubscriptionUser: null,
     filters: {
-      username: "",
+      search: "",
       limit: getUsersPerPageLimitSize(),
       sort: "-created_at",
     },
     inbounds: new Map(),
-    isEditingCore: false,
-    isEditingTelegram: false,
     refetchUsers: () => {
       fetchUsers(get().filters);
     },
@@ -183,15 +170,6 @@ export const useDashboard = create(
           delete query[key as keyof FilterUsageType];
       }
       return fetch(`/user/${body.username}/usage`, { method: "GET", query });
-    },
-    onEditingHosts: (isEditingHosts: boolean) => {
-      set({ isEditingHosts });
-    },
-    onEditingNodes: (isEditingNodes: boolean) => {
-      set({ isEditingNodes });
-    },
-    onShowingNodesUsage: (isShowingNodesUsage: boolean) => {
-      set({ isShowingNodesUsage });
     },
     setSubLink: (subscribeUrl) => {
       set({ subscribeUrl });

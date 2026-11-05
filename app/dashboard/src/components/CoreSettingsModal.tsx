@@ -8,13 +8,6 @@ import {
   FormLabel,
   HStack,
   IconButton,
-  Modal,
-  ModalBody,
-  ModalCloseButton,
-  ModalContent,
-  ModalFooter,
-  ModalHeader,
-  ModalOverlay,
   Select,
   Text,
   Tooltip,
@@ -30,7 +23,6 @@ import {
 import { joinPaths } from "@remix-run/router";
 import classNames from "classnames";
 import { useCoreSettings } from "contexts/CoreSettingsContext";
-import { useDashboard } from "contexts/DashboardContext";
 import debounce from "lodash.debounce";
 import { FC, useCallback, useEffect, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
@@ -39,7 +31,6 @@ import { useMutation } from "react-query";
 import { ReadyState } from "react-use-websocket";
 import { useWebSocket } from "react-use-websocket/dist/lib/use-websocket";
 import { getAuthToken } from "utils/authStorage";
-import { Icon } from "./Icon";
 import { JsonEditor } from "./JsonEditor";
 import "./JsonEditor/themes.js";
 import { useNodesQuery } from "contexts/NodesContext";
@@ -127,7 +118,6 @@ const CoreSettingModalContent: FC = () => {
     }
   };
 
-  const { isEditingCore } = useDashboard();
   const {
     fetchCoreSettings,
     updateConfig,
@@ -149,8 +139,8 @@ const CoreSettingModalContent: FC = () => {
   }, [config]);
 
   useEffect(() => {
-    if (isEditingCore) fetchCoreSettings();
-  }, [isEditingCore]);
+    fetchCoreSettings();
+  }, []);
   "".startsWith;
   const scrollShouldStayOnEnd = useRef(true);
   const updateLogs = useCallback(
@@ -238,7 +228,7 @@ const CoreSettingModalContent: FC = () => {
   };
   return (
     <form onSubmit={form.handleSubmit(handleOnSave)}>
-      <ModalBody>
+      <Box>
         <FormControl>
           <HStack justifyContent="space-between" alignItems="flex-start">
             <FormLabel>
@@ -342,9 +332,8 @@ const CoreSettingModalContent: FC = () => {
             ))}
           </Box>
         </FormControl>
-      </ModalBody>
-      <ModalFooter>
-        <HStack w="full" justifyContent="space-between">
+      </Box>
+      <HStack w="full" justifyContent="space-between" pt={6}>
           <HStack>
             <Box>
               <Button
@@ -376,32 +365,9 @@ const CoreSettingModalContent: FC = () => {
               {"保存"}
             </Button>
           </HStack>
-        </HStack>
-      </ModalFooter>
+      </HStack>
     </form>
   );
 };
-export const CoreSettingsModal: FC = () => {
-  const { isEditingCore } = useDashboard();
-  const onClose = useDashboard.setState.bind(null, { isEditingCore: false });
 
-  return (
-    <Modal isOpen={isEditingCore} onClose={onClose} size="3xl">
-      <ModalOverlay bg="blackAlpha.300" backdropFilter="blur(10px)" />
-      <ModalContent mx="3" w="full">
-        <ModalHeader pt={6}>
-          <HStack gap={2}>
-            <Icon color="primary">
-              <UsageIcon color="white" />
-            </Icon>
-            <Text fontWeight="semibold" fontSize="lg">
-              {"核心设置"}
-            </Text>
-          </HStack>
-        </ModalHeader>
-        <ModalCloseButton mt={3} />
-        <CoreSettingModalContent />
-      </ModalContent>
-    </Modal>
-  );
-};
+export const CoreSettingsPanel: FC = () => <CoreSettingModalContent />;

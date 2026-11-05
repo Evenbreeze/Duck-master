@@ -25,8 +25,8 @@
         "tlsSettings": {
           "certificates": [
             {
-              "certificateFile": "/var/lib/marzban/certs/__DOMAIN__.cer",
-              "keyFile": "/var/lib/marzban/certs/__DOMAIN__.cer.key"
+              "certificateFile": "/var/lib/duck/certs/__DOMAIN__.cer",
+              "keyFile": "/var/lib/duck/certs/__DOMAIN__.cer.key"
             }
           ],
           "alpn": ["http/1.1", "h2"]
@@ -49,8 +49,8 @@
         "tlsSettings": {
           "certificates": [
             {
-              "certificateFile": "/var/lib/marzban/certs/__DOMAIN__.cer",
-              "keyFile": "/var/lib/marzban/certs/__DOMAIN__.cer.key"
+              "certificateFile": "/var/lib/duck/certs/__DOMAIN__.cer",
+              "keyFile": "/var/lib/duck/certs/__DOMAIN__.cer.key"
             }
           ],
           "alpn": ["http/1.1", "h2"]
@@ -73,8 +73,8 @@
         "tlsSettings": {
           "certificates": [
             {
-              "certificateFile": "/var/lib/marzban/certs/__DOMAIN__.cer",
-              "keyFile": "/var/lib/marzban/certs/__DOMAIN__.cer.key"
+              "certificateFile": "/var/lib/duck/certs/__DOMAIN__.cer",
+              "keyFile": "/var/lib/duck/certs/__DOMAIN__.cer.key"
             }
           ],
           "alpn": ["http/1.1", "h2"]

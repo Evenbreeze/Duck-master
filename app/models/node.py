@@ -121,7 +121,6 @@ class NodeResponse(Node):
         from app.duck_node import (
             inbound_tags_list,
             parse_proxy_ports,
-            parse_reality_meta,
             protocol_from_tag,
             normalize_protocol_list,
         )

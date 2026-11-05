@@ -10,10 +10,10 @@ services:
     image: duck-panel:latest
     restart: always
     entrypoint: ["/usr/local/bin/docker-entrypoint.sh"]
-    env_file: /opt/marzban/.env
+    env_file: /opt/duck/.env
     network_mode: host
     volumes:
-      - /var/lib/marzban:/var/lib/marzban
+      - /var/lib/duck:/var/lib/duck
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',8000)); s.close()\""]
       interval: 15s

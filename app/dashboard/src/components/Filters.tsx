@@ -10,6 +10,10 @@ import {
   InputGroup,
   InputLeftElement,
   InputRightElement,
+  Menu,
+  MenuButton,
+  MenuItem,
+  MenuList,
   Spinner,
 } from "@chakra-ui/react";
 import {
@@ -20,7 +24,9 @@ import {
 import classNames from "classnames";
 import { useDashboard } from "contexts/DashboardContext";
 import debounce from "lodash.debounce";
+import useGetUser from "hooks/useGetUser";
 import React, { FC, useState } from "react";
+import { EllipsisVerticalIcon } from "@heroicons/react/24/outline";
 const iconProps = {
   baseStyle: {
     w: 4,
@@ -41,9 +47,14 @@ const setSearchField = debounce((search: string) => {
   });
 }, 300);
 
+const MoreIcon = chakra(EllipsisVerticalIcon, iconProps);
+
 export const Filters: FC<FilterProps> = ({ ...props }) => {
-  const { loading, filters, onFilterChange, refetchUsers, onCreateUser } =
+  const { loading, filters, onFilterChange, refetchUsers, onCreateUser, onResetAllUsage } =
     useDashboard();
+  const { userData, getUserIsSuccess, getUserIsPending } = useGetUser();
+  const sudo =
+    !getUserIsPending && getUserIsSuccess ? userData.is_sudo : false;
   const [search, setSearch] = useState("");
   const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearch(e.target.value);
@@ -67,15 +78,9 @@ export const Filters: FC<FilterProps> = ({ ...props }) => {
       }}
       position="sticky"
       top={0}
-      mx="-6"
-      px="6"
       rowGap={4}
-      gap={{
-        lg: 4,
-        base: 0,
-      }}
-      bg="var(--chakra-colors-chakra-body-bg)"
-      py={4}
+      gap={{ lg: 4, base: 0 }}
+      py={2}
       zIndex="docked"
       {...props}
     >
@@ -125,8 +130,27 @@ export const Filters: FC<FilterProps> = ({ ...props }) => {
             onClick={() => onCreateUser(true)}
             px={5}
           >
-            {"创建用户"}
+            创建用户
           </Button>
+          {sudo && (
+            <Menu>
+              <MenuButton
+                as={IconButton}
+                size="sm"
+                variant="outline"
+                aria-label="更多"
+                icon={<MoreIcon />}
+              />
+              <MenuList>
+                <MenuItem
+                  fontSize="sm"
+                  onClick={() => onResetAllUsage(true)}
+                >
+                  重置全部流量统计
+                </MenuItem>
+              </MenuList>
+            </Menu>
+          )}
         </HStack>
       </GridItem>
     </Grid>

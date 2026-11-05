@@ -9,20 +9,12 @@ import {
   Badge,
   Box,
   Button,
-  ButtonProps,
   chakra,
   Checkbox,
-  Divider,
   FormControl,
   FormLabel,
   HStack,
   IconButton,
-  Modal,
-  ModalBody,
-  ModalCloseButton,
-  ModalContent,
-  ModalHeader,
-  ModalOverlay,
   Switch,
   Text,
   Textarea,
@@ -30,7 +22,6 @@ import {
   useToast,
   VStack,
 } from "@chakra-ui/react";
-import { SquaresPlusIcon } from "@heroicons/react/24/outline";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   FetchNodesQueryKey,
@@ -48,23 +39,19 @@ import {
   useMutation,
   useQueryClient,
 } from "react-query";
-import "slick-carousel/slick/slick-theme.css";
-import "slick-carousel/slick/slick.css";
 import { Status } from "types/User";
 import {
   generateErrorMessage,
   generateSuccessMessage,
 } from "utils/toastHandler";
-import { useDashboard } from "../contexts/DashboardContext";
-import { DeleteNodeModal } from "./DeleteNodeModal";
-import { DeleteIcon } from "./DeleteUserModal";
-import { ReloadIcon } from "./Filters";
-import { Icon } from "./Icon";
-import { NodeModalStatusBadge } from "./NodeModalStatusBadge";
-
+import { DeleteIcon } from "components/DeleteUserModal";
+import { ReloadIcon } from "components/Filters";
+import { Input } from "components/Input";
+import { NodeModalStatusBadge } from "components/NodeModalStatusBadge";
+import { NodesUsagePanel } from "components/NodesUsagePanel";
+import { PageHeader } from "components/PageHeader";
 import { fetch } from "service/http";
 import { isNodeExpired } from "utils/nodeExpiry";
-import { Input } from "./Input";
 
 const PROTO_KEYS = ["vless", "vmess", "trojan", "ss"] as const;
 type ProtoKey = (typeof PROTO_KEYS)[number];
@@ -81,10 +68,6 @@ const CustomInput = chakra(Input, {
     bg: "white",
     _dark: { bg: "gray.700" },
   },
-});
-
-const ModalIcon = chakra(SquaresPlusIcon, {
-  baseStyle: { w: 5, h: 5 },
 });
 
 function protocolFlagsFromNode(node: NodeType) {
@@ -227,7 +210,7 @@ const NodeAccordion: FC<AccordionInboundType> = ({ toggleAccordion, node }) => {
         )}
         {pending ? (
           <Text fontSize="sm" color="gray.500">
-            该节点尚未执行安装命令。请在上方重新生成命令，或删除后重建。
+            等待在新 VPS 上执行安装命令。需要改协议请删除此记录后重新添加。
           </Text>
         ) : (
           <NodeEditForm
@@ -267,7 +250,12 @@ const NodeEditForm: FC<{
     const proxy_ports: Record<string, number> = {};
     for (const k of protocols) {
       const raw = values.proxy_ports?.[k];
-      if (raw !== undefined && raw !== "" && !Number.isNaN(Number(raw))) {
+      if (
+        raw !== undefined &&
+        raw !== null &&
+        String(raw).trim() !== "" &&
+        !Number.isNaN(Number(raw))
+      ) {
         proxy_ports[k] = Number(raw);
       }
     }
@@ -435,8 +423,7 @@ const NodeEditForm: FC<{
   );
 };
 
-export const NodesDialog: FC = () => {
-  const { isEditingNodes, onEditingNodes } = useDashboard();
+export const NodesPage: FC = () => {
   const toast = useToast();
   const queryClient = useQueryClient();
   const [openAccordions, setOpenAccordions] = useState<Record<string, unknown>>(
@@ -452,11 +439,6 @@ export const NodesDialog: FC = () => {
   });
   const { data: nodes, isLoading } = useNodesQuery();
   const { enrollNode } = useNodes();
-
-  const onClose = () => {
-    setOpenAccordions({});
-    onEditingNodes(false);
-  };
 
   const toggleAccordion = (index: number | string) => {
     const key = String(index);
@@ -475,33 +457,22 @@ export const NodesDialog: FC = () => {
 
   return (
     <>
-      <Modal isOpen={isEditingNodes} onClose={onClose}>
-        <ModalOverlay bg="blackAlpha.300" backdropFilter="blur(10px)" />
-        <ModalContent mx="3" maxW="lg">
-          <ModalHeader pt={6} pb={0}>
-            <HStack>
-              <Icon color="primary">
-                <ModalIcon color="white" />
-              </Icon>
-              <Text fontSize="lg">节点</Text>
-            </HStack>
-          </ModalHeader>
-          <ModalCloseButton mt={3} />
-          <ModalBody pb={6} pt={3}>
-            <Text fontSize="sm" color="gray.600" _dark={{ color: "gray.400" }} mb={3}>
-              新节点：主控定协议和端口，VPS 只跑一条安装命令。已上线节点：在下面改协议/端口/SNI，保存即推送。
-            </Text>
+      <PageHeader
+        title="节点"
+        description="新 VPS 用安装命令接入；已连线节点可改协议、端口与 REALITY 伪装域，保存即同步。"
+      />
 
-            <Box
-              p={3}
-              borderWidth="1px"
-              borderRadius="md"
-              _dark={{ borderColor: "gray.600" }}
-              mb={4}
-            >
-              <Text fontWeight="medium" fontSize="sm" mb={2}>
-                1. 添加新节点
-              </Text>
+      <Box
+        p={4}
+        borderWidth="1px"
+        borderRadius="xl"
+        bg="white"
+        _dark={{ bg: "gray.750", borderColor: "gray.600" }}
+        mb={6}
+      >
+        <Text fontWeight="semibold" fontSize="sm" mb={3}>
+          添加节点
+        </Text>
               <CustomInput
                 label="节点名称"
                 size="sm"
@@ -559,35 +530,34 @@ export const NodesDialog: FC = () => {
                   onFocus={(e) => e.target.select()}
                 />
               ) : null}
-            </Box>
+      </Box>
 
-            <Divider mb={3} />
+      <Text fontWeight="semibold" fontSize="sm" mb={3}>
+        节点列表
+      </Text>
+      {isLoading && <Text fontSize="sm">加载中…</Text>}
 
-            <Text fontWeight="medium" fontSize="sm" mb={2}>
-              2. 已添加的节点
-            </Text>
-            {isLoading && <Text fontSize="sm">加载中…</Text>}
+      <Accordion
+        w="full"
+        allowToggle
+        mb={8}
+        index={Object.keys(openAccordions).map((i) => parseInt(i, 10))}
+      >
+        <VStack w="full">
+          {!isLoading &&
+            nodes?.map((node, index) => (
+              <NodeAccordion
+                key={node.id ?? node.name}
+                toggleAccordion={() => toggleAccordion(index)}
+                node={node}
+              />
+            ))}
+        </VStack>
+      </Accordion>
 
-            <Accordion
-              w="full"
-              allowToggle
-              index={Object.keys(openAccordions).map((i) => parseInt(i, 10))}
-            >
-              <VStack w="full">
-                {!isLoading &&
-                  nodes?.map((node, index) => (
-                    <NodeAccordion
-                      key={node.id ?? node.name}
-                      toggleAccordion={() => toggleAccordion(index)}
-                      node={node}
-                    />
-                  ))}
-              </VStack>
-            </Accordion>
-          </ModalBody>
-        </ModalContent>
-      </Modal>
-      <DeleteNodeModal deleteCallback={() => setOpenAccordions({})} />
+      <NodesUsagePanel />
     </>
   );
 };
+
+export default NodesPage;

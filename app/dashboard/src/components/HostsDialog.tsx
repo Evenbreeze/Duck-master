@@ -17,12 +17,6 @@ import {
   IconButton,
   InputGroup,
   InputRightElement,
-  Modal,
-  ModalBody,
-  ModalCloseButton,
-  ModalContent,
-  ModalHeader,
-  ModalOverlay,
   Popover,
   PopoverArrow,
   PopoverBody,
@@ -1180,30 +1174,24 @@ const AccordionInbound: FC<AccordionInboundType> = ({
   );
 };
 
-export const HostsDialog: FC = () => {
-  const { isEditingHosts, onEditingHosts, refetchUsers, inbounds } =
-    useDashboard();
+export const HostsPanel: FC = () => {
+  const { refetchUsers, inbounds } = useDashboard();
   const { isLoading, hosts, fetchHosts, isPostLoading, setHosts } = useHosts();
   const toast = useToast();
   const [openAccordions, setOpenAccordions] = useState<any>({});
 
   useEffect(() => {
-    if (isEditingHosts) fetchHosts();
-  }, [isEditingHosts]);
+    fetchHosts();
+  }, []);
   const form = useForm<z.infer<typeof hostsSchema>>({
     resolver: zodResolver(hostsSchema),
   });
 
   useEffect(() => {
-    if (hosts && isEditingHosts) {
+    if (hosts) {
       form.reset(hosts);
     }
   }, [hosts]);
-
-  const onClose = () => {
-    setOpenAccordions({});
-    onEditingHosts(false);
-  };
   const handleFormSubmit = (hosts: z.infer<typeof hostsSchema>) => {
     setHosts(hosts)
       .then(() => {
@@ -1249,21 +1237,17 @@ export const HostsDialog: FC = () => {
   };
 
   return (
-    <Modal isOpen={isEditingHosts} onClose={onClose}>
-      <ModalOverlay bg="blackAlpha.300" backdropFilter="blur(10px)" />
-      <ModalContent mx="3" w="fit-content" maxW="3xl">
-        <ModalHeader pt={6}>
-          <Icon color="primary">
-            <ModalIcon color="white" />
-          </Icon>
-        </ModalHeader>
-        <ModalCloseButton mt={3} />
-        <ModalBody w="440px" pb={3} pt={3}>
-          <FormProvider {...form}>
-            <form onSubmit={form.handleSubmit(handleFormSubmit)}>
-              <Text mb={3} opacity={0.8} fontSize="sm">
-                {"使用此设置，您可以为每个入站分配特定的地址。"}
-              </Text>
+    <Box
+      w="full"
+      maxW="3xl"
+      p={4}
+      borderWidth="1px"
+      borderRadius="xl"
+      bg="white"
+      _dark={{ bg: "gray.750", borderColor: "gray.600" }}
+    >
+      <FormProvider {...form}>
+        <form onSubmit={form.handleSubmit(handleFormSubmit)}>
               {isLoading && "加载中..."}
               {!isLoading &&
                 hosts &&
@@ -1307,8 +1291,6 @@ export const HostsDialog: FC = () => {
               </HStack>
             </form>
           </FormProvider>
-        </ModalBody>
-      </ModalContent>
-    </Modal>
+    </Box>
   );
 };

@@ -8,12 +8,12 @@
 #   duck status | restart | logs | cli ...
 set -euo pipefail
 
-DUCK_DEPLOY_SCRIPT_REV="2026-11-05"
-MARZBAN_DIR="/opt/marzban"
-DATA_DIR="/var/lib/marzban"
+DUCK_DEPLOY_SCRIPT_REV="2026-11-06"
+DUCK_DIR="/opt/duck"
+DATA_DIR="/var/lib/duck"
 CERT_DIR="${DATA_DIR}/certs"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-COMPOSE_FILE="${COMPOSE_FILE:-/opt/marzban/docker-compose.yml}"
+COMPOSE_FILE="${COMPOSE_FILE:-/opt/duck/docker-compose.yml}"
 SERVICE="${DUCK_SERVICE:-panel}"
 
 # shellcheck source=duck-lib.sh
@@ -72,8 +72,8 @@ cmd_acme_cert() {
   if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx duck-panel; then
     if command -v duck >/dev/null 2>&1; then
       duck restart || true
-    elif [[ -f /opt/marzban/docker-compose.yml ]]; then
-      docker compose -f /opt/marzban/docker-compose.yml restart panel || true
+    elif [[ -f /opt/duck/docker-compose.yml ]]; then
+      docker compose -f /opt/duck/docker-compose.yml restart panel || true
     fi
   fi
   echo "[acme] 证书已安装: ${domain}"
@@ -88,7 +88,7 @@ cmd_compose() {
     status)     dc ps ;;
     cli)        shift; dc exec -T "$SERVICE" duck-cli "$@" ;;
     rebuild) dc build --no-cache "$SERVICE"; dc up -d --force-recreate "$SERVICE" ;;
-    ports)      cat /var/lib/marzban/duck-ports.env 2>/dev/null || cat /var/lib/marzban/xray_config.json ;;
+    ports)      cat /var/lib/duck/duck-ports.env 2>/dev/null || cat /var/lib/duck/xray_config.json ;;
     "")         dc ps ;;
     *)
       echo "duck: up | restart | logs | status | cli | rebuild | ports | upgrade" >&2
@@ -146,13 +146,13 @@ install_docker() {
   systemctl enable --now docker 2>/dev/null || true
 }
 
-ensure_marzban_dirs() { install -d "$MARZBAN_DIR" "$DATA_DIR" "$CERT_DIR"; }
+ensure_duck_dirs() { install -d "$DUCK_DIR" "$DATA_DIR" "$CERT_DIR"; }
 
 sync_duck_source() {
   duck_resolve_paths
   [[ -f "${DUCK_SRC}/Dockerfile" ]] || { red "找不到源码，设置 DUCK_SRC"; exit 1; }
   echo "[5/6] 同步源码 -> /opt/duck/source ..."
-  install -d "$MARZBAN_DIR"
+  install -d "$DUCK_DIR"
   duck_rsync_repo_to_opt_source "${DUCK_SRC}"
   duck_install_opt_deploy_files "${DEPLOY_DIR}"
 }
@@ -164,7 +164,7 @@ build_duck_image() {
   grep -q 'import pkg_resources' /opt/duck/source/Dockerfile 2>/dev/null && {
     red "Dockerfile 过旧，请 Push 后 git pull"; exit 1
   }
-  docker compose -f "${MARZBAN_DIR}/docker-compose.yml" build --no-cache panel
+  docker compose -f "${DUCK_DIR}/docker-compose.yml" build --no-cache panel
   docker run --rm --entrypoint python duck-panel:latest -c "import apscheduler; print('OK')"
 }
 
@@ -178,7 +178,7 @@ acme_reloadcmd() {
 }
 
 issue_cert() {
-  ensure_marzban_dirs
+  ensure_duck_dirs
   duck_resolve_paths
   duck_install_opt_deploy_files "${DEPLOY_DIR}"
   if [[ -s "${CERT_DIR}/${DOMAIN}.cer" && -s "${CERT_DIR}/${DOMAIN}.cer.key" ]]; then
@@ -196,14 +196,14 @@ issue_cert() {
 
 write_config() {
   echo "[4/6] 写入配置..."
-  ensure_marzban_dirs
+  ensure_duck_dirs
   duck_resolve_paths
   sed "s|__DOMAIN__|${DOMAIN}|g" "${DEPLOY_DIR}/env.template" \
     | sed "s|__PORT_VLESS__|${DUCK_PORT_VLESS}|g" \
     | sed "s|__PORT_VMESS__|${DUCK_PORT_VMESS}|g" \
     | sed "s|__PORT_TROJAN__|${DUCK_PORT_TROJAN}|g" \
     | sed "s|__PORT_SS__|${DUCK_PORT_SS}|g" \
-    > "${MARZBAN_DIR}/.env"
+    > "${DUCK_DIR}/.env"
   sed "s|__DOMAIN__|${DOMAIN}|g" "${DEPLOY_DIR}/xray_config.template.json" \
     | sed "s|__PORT_VLESS__|${DUCK_PORT_VLESS}|g" \
     | sed "s|__PORT_VMESS__|${DUCK_PORT_VMESS}|g" \
@@ -225,9 +225,9 @@ wait_for_panel_port() {
   exit 1
 }
 
-restart_marzban() {
+start_panel() {
   echo "[6/6] 启动面板..."
-  docker compose -f "${MARZBAN_DIR}/docker-compose.yml" up -d --force-recreate panel
+  docker compose -f "${DUCK_DIR}/docker-compose.yml" up -d --force-recreate panel
   wait_for_panel_port
   green "面板已在 8000 监听"
 }
@@ -245,7 +245,7 @@ create_admin() {
 prepare_fresh_install() {
   [[ "${DUCK_FRESH_INSTALL:-}" == "1" ]] || return 0
   docker rm -f duck-panel 2>/dev/null || true
-  docker compose -f "${MARZBAN_DIR}/docker-compose.yml" down 2>/dev/null || true
+  docker compose -f "${DUCK_DIR}/docker-compose.yml" down 2>/dev/null || true
 }
 
 cmd_install() {
@@ -258,9 +258,9 @@ cmd_install() {
   install_acme
   issue_cert
   write_config
-  ensure_marzban_dirs
+  ensure_duck_dirs
   build_duck_image
-  restart_marzban
+  start_panel
   create_admin
   green "
 完成: https://${DOMAIN}:8000/dashboard/
@@ -284,8 +284,8 @@ cmd_reinstall() {
   fi
   DUCK_SRC="${repo_root}" duck_preflight "${SCRIPT_DIR}"
   docker rm -f duck-panel 2>/dev/null || true
-  docker compose -f /opt/marzban/docker-compose.yml down 2>/dev/null || true
-  [[ "${DUCK_WIPE_DATA:-0}" == "1" ]] && rm -rf /var/lib/marzban/*
+  docker compose -f /opt/duck/docker-compose.yml down 2>/dev/null || true
+  [[ "${DUCK_WIPE_DATA:-0}" == "1" ]] && rm -rf /var/lib/duck/*
   DUCK_SRC="${repo_root}" DUCK_FRESH_INSTALL=1 \
     DOMAIN="$DOMAIN" EMAIL="$EMAIL" ADMIN_USER="$ADMIN_USER" ADMIN_PASSWORD="$ADMIN_PASSWORD" \
     ${DUCK_SKIP_DNS_CHECK:+DUCK_SKIP_DNS_CHECK=$DUCK_SKIP_DNS_CHECK} \
