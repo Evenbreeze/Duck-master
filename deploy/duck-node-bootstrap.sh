@@ -132,7 +132,8 @@ NODE_NAME="$(echo "$REG" | jq -r '.name')"
 }
 
 XRAY_VER="v25.8.3"
-if ! command -v xray >/dev/null; then
+XRAY_ASSETS="/usr/local/share/xray"
+install_xray_core_and_assets() {
   case "$(uname -m)" in
     x86_64|amd64) xray_pkg="Xray-linux-64.zip" ;;
     aarch64|arm64) xray_pkg="Xray-linux-arm64-v8a.zip" ;;
@@ -141,11 +142,18 @@ if ! command -v xray >/dev/null; then
       exit 1
       ;;
   esac
+  local tmp
   tmp="$(mktemp -d)"
   curl -fsSL "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VER}/${xray_pkg}" -o "$tmp/x.zip"
   unzip -oq "$tmp/x.zip" -d "$tmp"
   install -m 755 "$tmp/xray" /usr/local/bin/xray
+  install -d "$XRAY_ASSETS"
+  cp "$tmp/geoip.dat" "$tmp/geosite.dat" "$XRAY_ASSETS/"
   rm -rf "$tmp"
+}
+
+if ! command -v xray >/dev/null || [[ ! -f "${XRAY_ASSETS}/geoip.dat" ]]; then
+  install_xray_core_and_assets
 fi
 
 install -d /opt/duck-node /var/lib/duck-node /etc/duck-node
@@ -157,6 +165,7 @@ DUCK_NODE_SECRET=${API_SECRET}
 DUCK_SERVICE_PORT=${SERVICE_PORT}
 DUCK_XRAY_API_PORT=${API_PORT}
 DUCK_XRAY_BIN=/usr/local/bin/xray
+XRAY_LOCATION_ASSET=${XRAY_ASSETS}
 EOF
 
 cat >/etc/systemd/system/duck-node.service <<'UNIT'

@@ -14,6 +14,7 @@ from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
 XRAY_BIN = os.environ.get("DUCK_XRAY_BIN", "/usr/local/bin/xray")
+XRAY_ASSETS = os.environ.get("XRAY_LOCATION_ASSET", "/usr/local/share/xray")
 SECRET = os.environ.get("DUCK_NODE_SECRET", "")
 SERVICE_PORT = int(os.environ.get("DUCK_SERVICE_PORT", "62050"))
 
@@ -90,11 +91,19 @@ def _start_xray(config: dict) -> None:
     _stop_xray()
     _config_path.parent.mkdir(parents=True, exist_ok=True)
     _config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
+    env = os.environ.copy()
+    env.setdefault("XRAY_LOCATION_ASSET", XRAY_ASSETS)
     _xray_proc = subprocess.Popen(
         [XRAY_BIN, "run", "-c", str(_config_path)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
+        env=env,
     )
+    if _xray_proc.poll() is not None:
+        err = (_xray_proc.stderr.read() or b"").decode(errors="replace")[:2000]
+        _xray_proc = None
+        _started = False
+        raise HTTPException(500, detail=f"Xray failed to start: {err or 'unknown'}")
     _started = True
 
 
@@ -108,10 +117,16 @@ def _apply(body: SessionBody, authorization: Optional[str]) -> dict:
     return {}
 
 
+def _xray_running() -> bool:
+    return _xray_proc is not None and _xray_proc.poll() is None
+
+
 @app.post("/start")
 def start(body: SessionBody, authorization: Optional[str] = Header(None)):
-    if _started:
+    if _xray_running():
         raise HTTPException(400, detail="Xray is started already")
+    global _started
+    _started = False
     return _apply(body, authorization)
 
 
