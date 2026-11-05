@@ -108,6 +108,27 @@ def _sync_hosts_for_node(dbnode) -> None:
             sync_node_hosts(db, row)
 
 
+def _provision_fields_changed(dbnode, modify: NodeModify) -> bool:
+    """面板每次 PUT 都会带上 protocols/ports；仅在内容变化时才 reprovision。"""
+    if modify.protocols is not None:
+        if normalize_protocol_list(modify.protocols) != _protocols_for_dbnode(dbnode):
+            return True
+    if modify.proxy_ports is not None:
+        current = parse_proxy_ports(dbnode) or {}
+        for key, val in modify.proxy_ports.model_dump().items():
+            if val is None:
+                continue
+            if int(current.get(key, -1)) != int(val):
+                return True
+    if modify.reality_sni is not None:
+        meta = parse_reality_meta(dbnode) or {}
+        new_sni = (modify.reality_sni or "").strip()
+        old_sni = (meta.get("sni") or "").strip()
+        if new_sni != old_sni:
+            return True
+    return False
+
+
 @router.post("/node", responses={400: responses._400})
 def add_node_deprecated(_: Admin = Depends(Admin.check_sudo_admin)):
     """请用面板一键安装或 POST /api/node/enroll。"""
@@ -208,25 +229,17 @@ def modify_node(
 ):
     """Modify an existing node's configuration."""
     reprovisioned = False
+    was_disabled = dbnode.status == NodeStatus.disabled
     old_name = dbnode.name
     new_name = modify.name if modify.name is not None else dbnode.name
     name_changed = modify.name is not None and modify.name != old_name
     try:
-        need_reprovision = (
-            modify.regenerate_proxy_ports
-            or modify.protocols is not None
-            or modify.proxy_ports is not None
-            or modify.reality_sni is not None
-            or (name_changed and inbound_tags_list(dbnode))
+        need_reprovision = (name_changed and inbound_tags_list(dbnode)) or _provision_fields_changed(
+            dbnode, modify
         )
         if need_reprovision:
             if name_changed:
                 remove_node_inbounds_from_config(old_name)
-            if modify.regenerate_proxy_ports:
-                raise HTTPException(
-                    status_code=400,
-                    detail="请重新生成安装命令，或在面板调整协议/端口后保存",
-                )
             port_updates = (
                 modify.proxy_ports.model_dump() if modify.proxy_ports else None
             )
@@ -258,7 +271,19 @@ def modify_node(
     if reprovisioned or modify.address is not None or name_changed:
         _sync_hosts_for_node(dbnode)
 
-    if dbnode.status != NodeStatus.disabled and not node_is_expired(dbnode):
+    if modify.status is NodeStatus.disabled:
+        bg.add_task(xray.operations.remove_node, node_id=dbnode.id)
+        return dbnode
+
+    need_agent = reprovisioned or any(
+        getattr(modify, field) is not None
+        for field in ("address", "port", "api_port")
+    )
+    if (
+        need_agent
+        and dbnode.status != NodeStatus.disabled
+        and not node_is_expired(dbnode)
+    ):
         if reprovisioned:
             try:
                 if xray.nodes[dbnode.id].connected:
@@ -269,21 +294,15 @@ def modify_node(
                 bg.add_task(xray.operations.connect_node, node_id=dbnode.id)
         else:
             bg.add_task(xray.operations.connect_node, node_id=dbnode.id)
+    elif (
+        was_disabled
+        and modify.status is not None
+        and modify.status is not NodeStatus.disabled
+        and not node_is_expired(dbnode)
+    ):
+        bg.add_task(xray.operations.connect_node, node_id=dbnode.id)
 
     return dbnode
-
-
-@router.post("/node/{node_id}/regenerate-proxy-ports", response_model=NodeResponse)
-def regenerate_proxy_ports(
-    bg: BackgroundTasks,
-    dbnode=Depends(get_dbnode),
-    db: Session = Depends(get_db),
-    _: Admin = Depends(Admin.check_sudo_admin),
-):
-    raise HTTPException(
-        status_code=400,
-        detail="请重新生成安装命令分配端口，或在面板修改 proxy_ports 后保存",
-    )
 
 
 @router.delete("/node/{node_id}")

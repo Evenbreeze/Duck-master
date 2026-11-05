@@ -88,12 +88,7 @@ function nodeFormDefaults(node: NodeType): NodeType {
   };
 }
 
-type AccordionInboundType = {
-  toggleAccordion: () => void;
-  node: NodeType;
-};
-
-const NodeAccordion: FC<AccordionInboundType> = ({ toggleAccordion, node }) => {
+const NodeAccordion: FC<{ node: NodeType }> = ({ node }) => {
   const { updateNode, reconnectNode, setDeletingNode } = useNodes();
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -146,7 +141,7 @@ const NodeAccordion: FC<AccordionInboundType> = ({ toggleAccordion, node }) => {
       p={1}
       w="full"
     >
-      <AccordionButton px={2} borderRadius="3px" onClick={toggleAccordion}>
+      <AccordionButton px={2} borderRadius="3px">
         <HStack w="full" justifyContent="space-between" pr={2}>
           <Text
             as="span"
@@ -214,6 +209,7 @@ const NodeAccordion: FC<AccordionInboundType> = ({ toggleAccordion, node }) => {
           </Text>
         ) : (
           <NodeEditForm
+            node={node}
             form={form}
             mutate={mutate}
             isLoading={isLoading}
@@ -238,11 +234,12 @@ const NodeAccordion: FC<AccordionInboundType> = ({ toggleAccordion, node }) => {
 };
 
 const NodeEditForm: FC<{
+  node: NodeType;
   form: UseFormReturn<NodeType>;
   mutate: UseMutateFunction<unknown, unknown, NodeType>;
   isLoading: boolean;
   btnLeftAdornment?: ReactNode;
-}> = ({ form, mutate, isLoading, btnLeftAdornment }) => {
+}> = ({ node, form, mutate, isLoading, btnLeftAdornment }) => {
   const flags = form.watch("protocol_flags") ?? protocolFlagsFromNode(form.getValues());
 
   const buildPayload = (values: NodeType) => {
@@ -259,19 +256,24 @@ const NodeEditForm: FC<{
         proxy_ports[k] = Number(raw);
       }
     }
-    return {
+    const body: NodeType = {
       id: values.id,
       name: values.name,
       address: values.address,
       port: values.port,
       api_port: values.api_port,
-      status: values.status,
       usage_coefficient: values.usage_coefficient,
       expire_at: values.expire_at ?? null,
       protocols,
       proxy_ports,
       reality_sni: values.reality_sni?.trim() || undefined,
     };
+    if (values.status === "disabled") {
+      body.status = "disabled";
+    } else if (node.status === "disabled") {
+      body.status = "connecting";
+    }
+    return body;
   };
 
   return (
@@ -426,9 +428,6 @@ const NodeEditForm: FC<{
 export const NodesPage: FC = () => {
   const toast = useToast();
   const queryClient = useQueryClient();
-  const [openAccordions, setOpenAccordions] = useState<Record<string, unknown>>(
-    {}
-  );
   const [installCommand, setInstallCommand] = useState("");
   const [enrollName, setEnrollName] = useState("");
   const [enrollProtocols, setEnrollProtocols] = useState({
@@ -439,16 +438,6 @@ export const NodesPage: FC = () => {
   });
   const { data: nodes, isLoading } = useNodesQuery();
   const { enrollNode } = useNodes();
-
-  const toggleAccordion = (index: number | string) => {
-    const key = String(index);
-    setOpenAccordions((prev) => {
-      const next = { ...prev };
-      if (next[key]) delete next[key];
-      else next[key] = {};
-      return next;
-    });
-  };
 
   const enrollBusy = useMemo(
     () => !enrollName.trim() || !Object.values(enrollProtocols).some(Boolean),
@@ -537,20 +526,11 @@ export const NodesPage: FC = () => {
       </Text>
       {isLoading && <Text fontSize="sm">加载中…</Text>}
 
-      <Accordion
-        w="full"
-        allowToggle
-        mb={8}
-        index={Object.keys(openAccordions).map((i) => parseInt(i, 10))}
-      >
+      <Accordion w="full" allowToggle mb={8}>
         <VStack w="full">
           {!isLoading &&
-            nodes?.map((node, index) => (
-              <NodeAccordion
-                key={node.id ?? node.name}
-                toggleAccordion={() => toggleAccordion(index)}
-                node={node}
-              />
+            nodes?.map((node) => (
+              <NodeAccordion key={node.id ?? node.name} node={node} />
             ))}
         </VStack>
       </Accordion>

@@ -65,7 +65,6 @@ class NodeModify(BaseModel):
     status: Optional[NodeStatus] = None
     usage_coefficient: Optional[float] = Field(None, gt=0)
     expire_at: Optional[int] = None
-    regenerate_proxy_ports: bool = False
     protocols: Optional[List[DuckProtocol]] = None
     proxy_ports: Optional[DuckProxyPorts] = None
     reality_sni: Optional[str] = Field(None, max_length=253)

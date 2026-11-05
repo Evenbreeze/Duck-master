@@ -24,10 +24,10 @@ sudo duck upgrade
 **无 clone 一键升级**（会 clone 到 `/root/Duck-master`）
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Evenbreeze/Duck-master/master/deploy/duck.sh | sudo bash -s upgrade
+curl -fsSL https://raw.githubusercontent.com/Evenbreeze/Duck-master/main/deploy/duck.sh | sudo bash -s upgrade
 ```
 
-默认分支为 `main` 时，URL 里 `master` 改成 `main`。
+（若默认分支仍是 `master`，把 URL 里的 `main` 改成 `master`。）
 
 面板：`https://你的域名:8000/dashboard/`  
 侧栏：**用户 · 节点 · Host · Telegram · 系统**  

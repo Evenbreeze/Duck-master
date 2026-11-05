@@ -1447,7 +1447,11 @@ def update_node(db: Session, dbnode: Node, modify: NodeModify) -> Node:
         dbnode.status = modify.status
         dbnode.xray_version = None
         dbnode.message = None
-    else:
+    elif (
+        modify.status is not None
+        and modify.status is not NodeStatus.disabled
+        and dbnode.status is NodeStatus.disabled
+    ):
         dbnode.status = NodeStatus.connecting
 
     if modify.usage_coefficient is not None:
