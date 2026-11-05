@@ -258,7 +258,7 @@ duck_preflight() {
   green() { echo -e "\033[32m$*\033[0m"; }
   fail() { red "preflight 失败: $*"; exit 1; }
   check_grep() { grep -q "$2" "$1" || fail "$1 缺少: $2"; }
-  check_not() { grep -q "$2" "$1" && fail "$1 仍含: $2"; }
+  check_not() { if grep -q "$2" "$1"; then fail "$1 仍含: $2"; fi; }
 
   [[ -f "${DEPLOY}/duck.sh" ]] || fail "找不到 deploy/duck.sh"
   [[ -f "${ROOT}/Dockerfile" ]] || fail "找不到 Dockerfile（可设 DUCK_SRC=）"
