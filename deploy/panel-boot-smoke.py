@@ -33,8 +33,48 @@ def _materialize_xray_json() -> Path:
     return out
 
 
+def _ensure_smoke_tls_certs(domain: str = "smoke.local") -> None:
+    """XRayConfig 启动时会读 tls 证书路径，smoke 容器里需有占位文件。"""
+    cert_dir = Path("/var/lib/duck/certs")
+    cert_dir.mkdir(parents=True, exist_ok=True)
+    cer = cert_dir / f"{domain}.cer"
+    key = cert_dir / f"{domain}.cer.key"
+    if cer.is_file() and key.is_file():
+        return
+    from datetime import datetime, timedelta
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    subject = issuer = x509.Name(
+        [x509.NameAttribute(NameOID.COMMON_NAME, domain)]
+    )
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(issuer)
+        .public_key(private_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(datetime.utcnow())
+        .not_valid_after(datetime.utcnow() + timedelta(days=1))
+        .sign(private_key, hashes.SHA256())
+    )
+    cer.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
+    key.write_bytes(
+        private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+    )
+
+
 def main() -> None:
     xray_path = _materialize_xray_json()
+    _ensure_smoke_tls_certs("smoke.local")
     os.environ.setdefault("XRAY_JSON", str(xray_path))
     os.environ.setdefault("SQLALCHEMY_DATABASE_URL", "sqlite:////tmp/duck-panel-boot-smoke.db")
     os.environ.setdefault("TELEGRAM_API_TOKEN", "")
@@ -42,7 +82,7 @@ def main() -> None:
 
     try:
         import app  # noqa: F401
-    except ImportError as e:
+    except Exception as e:
         raise SystemExit(f"panel boot smoke failed (import app): {e}") from e
     from app.subscription import (  # noqa: F401
         ClashConfiguration,
