@@ -40,7 +40,10 @@ def main() -> None:
     os.environ.setdefault("TELEGRAM_API_TOKEN", "")
     os.environ.setdefault("TELEGRAM_PROXY_URL", "")
 
-    import app  # noqa: F401
+    try:
+        import app  # noqa: F401
+    except ImportError as e:
+        raise SystemExit(f"panel boot smoke failed (import app): {e}") from e
     from app.subscription import (  # noqa: F401
         ClashConfiguration,
         ClashMetaConfiguration,

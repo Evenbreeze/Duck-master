@@ -16,13 +16,11 @@ from xray_api import exceptions as exc
 core = XRayCore(XRAY_EXECUTABLE_PATH, XRAY_ASSETS_PATH)
 
 # Search for a free API port
-try:
-    for api_port in range(randint(10000, 60000), 65536):
-        if not check_port(api_port):
-            break
-finally:
-    config = XRayConfig(XRAY_JSON, api_port=api_port)
-    del api_port
+api_port = 62051
+for api_port in range(randint(10000, 60000), 65536):
+    if not check_port(api_port):
+        break
+config = XRayConfig(XRAY_JSON, api_port=api_port)
 
 api = XRayAPI(config.api_host, config.api_port)
 

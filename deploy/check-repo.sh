@@ -11,6 +11,7 @@ required=(
   app/subscription/outline.py
   app/subscription/v2ray.py
   app/subscription/share.py
+  app/xray/errors.py
   app/templates/clash/default.yml
   app/templates/clash/settings.yml
   app/templates/singbox/default.json
