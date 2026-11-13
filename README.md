@@ -36,3 +36,11 @@ cd /root/Duck-master && git pull && sudo duck upgrade
 | `check-repo.sh` / `panel-boot-smoke.py` | CI 与构建自检 |
 
 装好后 `duck` → 符号链接 `/opt/duck/deploy/duck.sh`（勿复制到 `/usr/local/bin`）。
+
+## standalone-ss（不经主控）
+
+单机 Shadowsocks 一键脚本，见 [`standalone-ss/README.md`](standalone-ss/README.md)。
+
+```bash
+bash <(curl -Ls https://raw.githubusercontent.com/Evenbreeze/Duck-master/main/standalone-ss/ss.sh)
+```
